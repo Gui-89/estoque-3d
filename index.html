@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Estoque 3D Cloud Secure</title>
+    <style>
+        :root {
+            --primary: #2563eb;
+            --danger: #dc2626;
+            --bg: #f3f4f6;
+            --surface: #ffffff;
+            --text: #1f2937;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+            margin: 0;
+            padding: 0;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        /* Telas */
+        .screen { display: none; }
+        .screen.active { display: block; }
+
+        /* Tela de Login */
+        #login-screen {
+            text-align: center;
+            max-width: 400px;
+            margin: 100px auto;
+            padding: 20px;
+        }
+        .login-btn {
+            background: white;
+            color: #444;
+            border: 1px solid #c1c1c1;
+            padding: 12px 24px;
+            border-radius: 6px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            width: 100%;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        /* Cabeçalho do App */
+        .header-area {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 0.9em;
+        }
+        .user-info img {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+        }
+        .logout-btn {
+            background: transparent;
+            color: var(--danger);
+            border: 1px solid var(--danger);
+            padding: 5px 10px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        
+        /* Navegação em Abas */
+        .tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        .tab-btn {
+            flex: 1;
+            padding: 12px;
+            background: #e5e7eb;
+            border: none;
+            border-radius: 8px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: 0.3s;
+        }
+        .tab-btn.active {
+            background: var(--primary);
+            color: white;
+        }
+        
+        /* Seções e Formulários */
+        .section { display: none; }
+        .section.active { display: block; }
+        .card {
+            background: var(--surface);
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+            margin-bottom: 20px;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 500;
+            font-size: 0.9em;
+        }
+        input, textarea {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+            box-sizing: border-box;
+        }
+        button.submit-btn {
+            background: var(--primary);
+            color: white;
+            padding: 12px 20px;
+            border: none;
+            border-radius: 6px;
+            width: 100%;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        
+        /* Listagem */
+        .item-list {
+            display: grid;
+            gap: 15px;
+            grid-template-columns: 1fr;
+        }
+        @media (min-width: 600px) {
+            .item-list { grid-template-columns: 1fr 1fr; }
+        }
+        .item-card {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            border-left: 4px solid var(--primary);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            position: relative;
+        }
+        .item-card img {
+            max-width: 100%;
+            height: auto;
+            border-radius: 6px;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="login-screen" class="screen active">
+        <div class="card">
+            <h2>Controle de Estoque 3D</h2>
+            <p>Faça login para acessar e sincronizar os dados do seu estoque.</p>
+            <button class="login-btn" id="btn-login-google">
+                <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google" width="18">
+                Entrar com o Google
+            </button>
+        </div>
+    </div>
+
+    <div id="app-screen" class="screen">
+        <div class="container">
+            
+            <div class="header-area">
+                <h1>Estoque 3D ☁️</h1>
+                <div class="user-info">
+                    <img id="user-photo" src="" alt="User">
+                    <span id="user-name">Usuário</span>
+                    <button class="logout-btn" id="btn-logout">Sair</button>
+                </div>
+            </div>
+
+            <div class="tabs">
+                <button class="tab-btn active" onclick="switchTab('filamentos')">Filamentos</button>
+                <button class="tab-btn" onclick="switchTab('produtos')">Produtos Prontos</button>
+            </div>
+
+            <div id="filamentos" class="section active">
+                <div class="card">
+                    <h3>Adicionar Filamento</h3>
+                    <form id="form-filamento">
+                        <div class="form-group">
+                            <label>Marca</label>
+                            <input type="text" id="fil-marca" required placeholder="Ex: Esun, Voolt3D">
+                        </div>
+                        <div class="form-group">
+                            <label>Cor</label>
+                            <input type="text" id="fil-cor" required placeholder="Ex: Preto Fosco">
+                        </div>
+                        <div class="form-group">
+                            <label>Quantidade Disponível (gramas)</label>
+                            <input type="number" id="fil-qtd" required placeholder="Ex: 850">
+                        </div>
+                        <button type="submit" class="submit-btn">Salvar Filamento</button>
+                    </form>
+                </div>
+                <h3>Estoque Atual</h3>
+                <div id="lista-filamentos" class="item-list">Carregando filamentos...</div>
+            </div>
+
+            <div id="produtos" class="section">
+                <div class="card">
+                    <h3>Cadastrar Produto</h3>
+                    <form id="form-produto">
+                        <div class="form-group">
+                            <label>Nome do Produto</label>
+                            <input type="text" id="prod-nome" required placeholder="Ex: Vaso Decorativo Geométrico">
+                        </div>
+                        <div class="form-group">
+                            <label>Descrição</label>
+                            <textarea id="prod-desc" rows="2" placeholder="Detalhes do produto..."></textarea>
+                        </div>
+                        <div class="form-group">
+                            <label>Quantidade em Estoque</label>
+                            <input type="number" id="prod-qtd" required placeholder="Ex: 5">
+                        </div>
+                        <div class="form-group">
+                            <label>Tempo de Produção (Ex: 2h 30m)</label>
+                            <input type="text" id="prod-tempo" required placeholder="Ex: 2h 30m">
+                        </div>
+                        <div class="form-group">
+                            <label>Gasto de Filamento (gramas)</label>
+                            <input type="number" id="prod-gasto" required placeholder="Ex: 120">
+                        </div>
+                        <div class="form-group">
+                            <label>URL da Imagem (Opcional por enquanto)</label>
+                            <input type="url" id="prod-img" placeholder="https://link-da-imagem.com/img.jpg">
+                        </div>
+                        <button type="submit" class="submit-btn">Salvar Produto</button>
+                    </form>
+                </div>
+                <h3>Produtos Cadastrados</h3>
+                <div id="lista-produtos" class="item-list">Carregando produtos...</div>
+            </div>
+        </div>
+    </div>
+
+<script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
+    import { getFirestore, collection, addDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js";
+    import { getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-auth.js";
+
+    // Suas chaves oficiais
+    const firebaseConfig = {
+        apiKey: "AIzaSyDEWD_R8z5dFFEhRQ1bUUpk9CCo47a7RHA",
+        authDomain: "estoque-3d.firebaseapp.com",
+        projectId: "estoque-3d",
+        storageBucket: "estoque-3d.firebasestorage.app",
+        messagingSenderId: "970757670839",
+        appId: "1:970757670839:web:cf41d4c9ad4acac96c0a32",
+        measurementId: "G-9RL1075L3T"
+    };
+
+    // Inicializa o Firebase
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+    const auth = getAuth(app);
+    const provider = new GoogleAuthProvider();
+
+    // 🔴 AQUI VOCÊ COLOCA OS E-MAILS AUTORIZADOS 🔴
+    const emailsPermitidos = [
+        "guigas83@gmail.com", 
+        "luciana.lukassantos@gmail.com"
+        // Coloque os e-mails entre aspas duplas, separados por vírgula.
+    ];
+
+    const colFilamentos = collection(db, "filamentos");
+    const colProdutos = collection(db, "produtos");
+
+    const loginScreen = document.getElementById('login-screen');
+    const appScreen = document.getElementById('app-screen');
+
+    // Botão Login
+    document.getElementById('btn-login-google').addEventListener('click', () => {
+        signInWithPopup(auth, provider).catch(error => alert("Erro ao logar: " + error.message));
+    });
+
+    // Botão Sair
+    document.getElementById('btn-logout').addEventListener('click', () => {
+        signOut(auth);
+    });
+
+    // SISTEMA DE CONTROLE DE ACESSO
+    onAuthStateChanged(auth, (user) => {
+        if (user) {
+            // Verifica se o e-mail que logou está na nossa lista lá em cima
+            if (emailsPermitidos.includes(user.email)) {
+                // E-mail autorizado! Mostra o app.
+                loginScreen.classList.remove('active');
+                appScreen.classList.add('active');
+                
+                document.getElementById('user-name').innerText = user.displayName;
+                document.getElementById('user-photo').src = user.photoURL || "https://via.placeholder.com/32";
+                
+                activarEscutadoresBanco();
+            } else {
+                // E-mail NÃO autorizado! Bloqueia e desloga.
+                alert(`Acesso negado!\nO e-mail ${user.email} não tem permissão para acessar o estoque.`);
+                signOut(auth);
+            }
+        } else {
+            // Ninguém logado, mostra tela de login
+            appScreen.classList.remove('active');
+            loginScreen.classList.add('active');
+        }
+    });
+
+    // Lógica: Salvar Filamento
+    document.getElementById('form-filamento').addEventListener('submit', async function(e) {
+        e.preventDefault();
+        try {
+            await addDoc(colFilamentos, {
+                marca: document.getElementById('fil-marca').value,
+                cor: document.getElementById('fil-cor').value,
+                qtd: Number(document.getElementById('fil-qtd').value),
+                criadoEm: Date.now(),
+                adicionadoPor: auth.currentUser.email
+            });
+            this.reset();
+        } catch (error) {
+            alert("Erro ao salvar filamento: " + error.message);
+        }
+    });
+
+    // Lógica: Salvar Produto
+    document.getElementById('form-produto').addEventListener('submit', async function(e) {
+        e.preventDefault();
+        try {
+            await addDoc(colProdutos, {
+                nome: document.getElementById('prod-nome').value,
+                desc: document.getElementById('prod-desc').value,
+                qtd: Number(document.getElementById('prod-qtd').value),
+                tempo: document.getElementById('prod-tempo').value,
+                gasto: Number(document.getElementById('prod-gasto').value),
+                img: document.getElementById('prod-img').value,
+                criadoEm: Date.now(),
+                adicionadoPor: auth.currentUser.email
+            });
+            this.reset();
+        } catch (error) {
+            alert("Erro ao salvar produto: " + error.message);
+        }
+    });
+
+    let unsubscribeFilamentos;
+    let unsubscribeProdutos;
+
+    function activarEscutadoresBanco() {
+        if(unsubscribeFilamentos) unsubscribeFilamentos();
+        if(unsubscribeProdutos) unsubscribeProdutos();
+
+        unsubscribeFilamentos = onSnapshot(colFilamentos, (snapshot) => {
+            const div = document.getElementById('lista-filamentos');
+            div.innerHTML = '';
+            if(snapshot.empty) {
+                div.innerHTML = 'Nenhum filamento cadastrado.';
+                return;
+            }
+            
+            snapshot.forEach(doc => {
+                const f = doc.data();
+                div.innerHTML += `
+                    <div class="item-card">
+                        <strong>${f.cor}</strong> (${f.marca})<br>
+                        Quantidade: ${f.qtd}g<br>
+                        <small style="color: #666; font-size: 0.8em;">Adicionado por: ${f.adicionadoPor || 'Sistema'}</small>
+                    </div>
+                `;
+            });
+        });
+
+        unsubscribeProdutos = onSnapshot(colProdutos, (snapshot) => {
+            const div = document.getElementById('lista-produtos');
+            div.innerHTML = '';
+            if(snapshot.empty) {
+                div.innerHTML = 'Nenhum produto cadastrado.';
+                return;
+            }
+
+            snapshot.forEach(doc => {
+                const p = doc.data();
+                const imgTag = p.img ? `<img src="${p.img}" alt="${p.nome}">` : '';
+                div.innerHTML += `
+                    <div class="item-card">
+                        <strong>${p.nome}</strong> (Qtd: ${p.qtd})<br>
+                        <small>${p.desc}</small><br>
+                        <small>⏱️ ${p.tempo} | ⚖️ ${p.gasto}g de filamento</small><br>
+                        <small style="color: #666; font-size: 0.8em;">Adicionado por: ${p.adicionadoPor || 'Sistema'}</small>
+                        ${imgTag}
+                    </div>
+                `;
+            });
+        });
+    }
+</script>
+
+<script>
+    function switchTab(tabId) {
+        document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        
+        document.getElementById(tabId).classList.add('active');
+        event.currentTarget.classList.add('active');
+    }
+</script>
+
+</body>
+</html>

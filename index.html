@@ -1,425 +1,1258 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Estoque 3D Cloud Secure</title>
-    <style>
-        /* =========================================================
-           🎨 SUA IDENTIDADE VISUAL (EDITE AS CORES AQUI)
-           ========================================================= */
-        :root {
-            /* Cores da Marca */
-            --primary: #2563eb;       
-            --primary-hover: #1d4ed8; 
-            --danger: #dc2626;        
-            
-            /* Cores de Fundo */
-            --bg-page: #f3f4f6;       
-            --bg-card: #ffffff;       
-            --bg-input: #ffffff;      
-            
-            /* Cores de Texto */
-            --text-main: #1f2937;     
-            --text-muted: #6b7280;    
-            
-            /* Estrutura */
-            --font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            --radius-card: 12px;      
-            --radius-btn: 6px;        
-        }
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Estoque 3D — GLM Studio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+/* ===== RESET & BASE ===== */
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --neon:#00ffa3;
+  --neon-dim:rgba(0,255,163,0.12);
+  --neon-border:rgba(0,255,163,0.35);
+  --blue:#3b82f6;
+  --blue-dim:rgba(59,130,246,0.12);
+  --amber:#f59e0b;
+  --amber-dim:rgba(245,158,11,0.12);
+  --red:#ef4444;
+  --red-dim:rgba(239,68,68,0.12);
+  --bg:#0a0a0f;
+  --bg2:#111118;
+  --bg3:#16161f;
+  --glass:rgba(255,255,255,0.04);
+  --glass-border:rgba(255,255,255,0.07);
+  --text:#e8e8f0;
+  --muted:#6b6b80;
+  --font-ui:'DM Sans',sans-serif;
+  --font-mono:'Space Mono',monospace;
+  --r:10px;
+  --r-lg:16px;
+}
+html{scroll-behavior:smooth}
+body{
+  font-family:var(--font-ui);
+  background:var(--bg);
+  color:var(--text);
+  min-height:100vh;
+  line-height:1.6;
+}
 
-        body {
-            font-family: var(--font-family);
-            background-color: var(--bg-page);
-            color: var(--text-main);
-            margin: 0;
-            padding: 0;
-        }
-        .container { max-width: 800px; margin: 0 auto; padding: 20px; }
-        
-        .screen { display: none; }
-        .screen.active { display: block; }
+/* ===== SCROLLBAR ===== */
+::-webkit-scrollbar{width:6px}
+::-webkit-scrollbar-track{background:var(--bg2)}
+::-webkit-scrollbar-thumb{background:var(--neon-border);border-radius:3px}
 
-        /* Login */
-        #login-screen { text-align: center; max-width: 400px; margin: 100px auto; padding: 20px; }
-        .login-btn {
-            background: var(--bg-card); color: var(--text-main); border: 1px solid #c1c1c1;
-            padding: 12px 24px; border-radius: var(--radius-btn); font-size: 16px; font-weight: bold;
-            cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 10px;
-            width: 100%; box-shadow: 0 2px 4px rgba(0,0,0,0.05); transition: 0.2s;
-        }
-        .login-btn:hover { background-color: #f9fafb; }
+/* ===== GRID BG ===== */
+body::before{
+  content:'';
+  position:fixed;
+  inset:0;
+  background-image:
+    linear-gradient(rgba(0,255,163,0.03) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(0,255,163,0.03) 1px,transparent 1px);
+  background-size:40px 40px;
+  pointer-events:none;
+  z-index:0;
+}
 
-        /* Header */
-        .header-area { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
-        .header-area h1 { color: var(--primary); margin: 0; }
-        .user-info { display: flex; align-items: center; gap: 10px; font-size: 0.9em; }
-        .user-info img { width: 32px; height: 32px; border-radius: 50%; border: 2px solid var(--primary); }
-        .logout-btn {
-            background: transparent; color: var(--danger); border: 1px solid var(--danger);
-            padding: 5px 10px; border-radius: var(--radius-btn); cursor: pointer; transition: 0.2s;
-        }
-        .logout-btn:hover { background: var(--danger); color: white; }
-        
-        /* Abas */
-        .tabs { display: flex; gap: 10px; margin-bottom: 20px; }
-        .tab-btn {
-            flex: 1; padding: 12px; background: #e5e7eb; color: var(--text-muted); border: none;
-            border-radius: var(--radius-btn); font-weight: bold; cursor: pointer; transition: 0.3s;
-        }
-        .tab-btn:hover { background: #d1d5db; }
-        .tab-btn.active { background: var(--primary); color: white; }
-        
-        /* Seções e Forms */
-        .section { display: none; }
-        .section.active { display: block; }
-        .card {
-            background: var(--bg-card); padding: 25px; border-radius: var(--radius-card);
-            box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-bottom: 25px; border: 1px solid #e5e7eb;
-        }
-        .card h3 { margin-top: 0; color: var(--primary); }
-        .form-group { margin-bottom: 15px; }
-        .form-row { display: flex; gap: 10px; align-items: flex-end; }
-        
-        label { display: block; margin-bottom: 5px; font-weight: 500; font-size: 0.9em; color: var(--text-main); }
-        input, textarea, select {
-            width: 100%; padding: 12px; background-color: var(--bg-input); color: var(--text-main);
-            border: 1px solid #d1d5db; border-radius: var(--radius-btn); box-sizing: border-box;
-            font-family: inherit; transition: border-color 0.2s;
-        }
-        input:focus, textarea:focus, select:focus {
-            outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
-        }
-        
-        button.submit-btn {
-            background: var(--primary); color: white; padding: 14px 20px; border: none;
-            border-radius: var(--radius-btn); width: 100%; font-weight: bold; font-size: 1em; cursor: pointer; transition: 0.2s;
-        }
-        button.submit-btn:hover { background: var(--primary-hover); }
-        
-        /* Listagem */
-        .item-list { display: grid; gap: 15px; grid-template-columns: 1fr; }
-        @media (min-width: 600px) { .item-list { grid-template-columns: 1fr 1fr; } }
-        
-        .item-card {
-            background: var(--bg-card); padding: 15px; border-radius: var(--radius-btn);
-            border-left: 5px solid var(--primary); box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-            border-top: 1px solid #e5e7eb; border-right: 1px solid #e5e7eb; border-bottom: 1px solid #e5e7eb;
-        }
-        .item-card img { max-width: 100%; height: auto; border-radius: var(--radius-btn); margin-top: 10px; }
+/* ===== SCREENS ===== */
+.screen{display:none;min-height:100vh}
+.screen.active{display:flex}
 
-        /* Ações e Esgotado */
-        .card-actions { display: flex; gap: 10px; margin-top: 15px; margin-bottom: 5px; }
-        .btn-edit { background: #f59e0b; color: white; border: none; padding: 8px 12px; border-radius: var(--radius-btn); cursor: pointer; font-size: 0.85em; font-weight: bold; }
-        .btn-delete { background: var(--danger); color: white; border: none; padding: 8px 12px; border-radius: var(--radius-btn); cursor: pointer; font-size: 0.85em; font-weight: bold; }
-        .badge-esgotado { background: var(--danger); color: white; padding: 3px 8px; border-radius: 4px; font-size: 0.75em; font-weight: bold; margin-left: 10px; vertical-align: middle; }
-        .item-card.esgotado { border-left: 5px solid var(--danger); opacity: 0.8; }
-    </style>
+/* ===== LOGIN ===== */
+#login-screen{
+  align-items:center;
+  justify-content:center;
+  position:relative;
+  z-index:1;
+}
+.login-box{
+  background:var(--bg2);
+  border:1px solid var(--glass-border);
+  border-radius:var(--r-lg);
+  padding:48px 40px;
+  width:100%;
+  max-width:400px;
+  text-align:center;
+  position:relative;
+}
+.login-box::before{
+  content:'';
+  position:absolute;
+  top:-1px;left:10%;right:10%;
+  height:2px;
+  background:linear-gradient(90deg,transparent,var(--neon),transparent);
+  border-radius:2px;
+}
+.login-logo{
+  font-family:var(--font-mono);
+  font-size:13px;
+  color:var(--neon);
+  letter-spacing:4px;
+  text-transform:uppercase;
+  margin-bottom:8px;
+}
+.login-box h2{
+  font-size:26px;
+  font-weight:600;
+  margin-bottom:8px;
+}
+.login-box p{
+  color:var(--muted);
+  font-size:14px;
+  margin-bottom:32px;
+}
+.login-btn{
+  background:var(--glass);
+  color:var(--text);
+  border:1px solid var(--glass-border);
+  padding:14px 24px;
+  border-radius:var(--r);
+  font-size:15px;
+  font-weight:500;
+  font-family:var(--font-ui);
+  cursor:pointer;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  gap:10px;
+  width:100%;
+  transition:.2s;
+}
+.login-btn:hover{
+  border-color:var(--neon-border);
+  background:var(--neon-dim);
+}
+
+/* ===== APP LAYOUT ===== */
+#app-screen{
+  flex-direction:column;
+  position:relative;
+  z-index:1;
+}
+.topbar{
+  position:sticky;top:0;z-index:100;
+  background:rgba(10,10,15,0.85);
+  backdrop-filter:blur(12px);
+  border-bottom:1px solid var(--glass-border);
+  padding:0 24px;
+  height:60px;
+  display:flex;align-items:center;justify-content:space-between;
+  gap:16px;
+}
+.topbar-brand{
+  font-family:var(--font-mono);
+  font-size:13px;
+  color:var(--neon);
+  letter-spacing:3px;
+  text-transform:uppercase;
+  display:flex;align-items:center;gap:8px;
+}
+.topbar-brand .dot{
+  width:8px;height:8px;
+  border-radius:50%;
+  background:var(--neon);
+  box-shadow:0 0 8px var(--neon);
+  animation:pulse 2s infinite;
+}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(.8)}}
+.user-chip{
+  display:flex;align-items:center;gap:8px;
+  background:var(--glass);
+  border:1px solid var(--glass-border);
+  padding:5px 10px 5px 5px;
+  border-radius:100px;
+}
+.user-chip img{
+  width:28px;height:28px;
+  border-radius:50%;
+  border:1.5px solid var(--neon-border);
+}
+.user-chip span{
+  font-size:13px;
+  color:var(--muted);
+  max-width:120px;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+.logout-btn{
+  background:transparent;
+  color:var(--red);
+  border:1px solid rgba(239,68,68,0.3);
+  padding:5px 12px;
+  border-radius:6px;
+  font-size:12px;
+  font-family:var(--font-ui);
+  cursor:pointer;
+  transition:.2s;
+}
+.logout-btn:hover{background:var(--red-dim)}
+
+/* ===== NAV TABS ===== */
+.nav-tabs{
+  display:flex;gap:4px;
+  padding:12px 24px;
+  background:var(--bg2);
+  border-bottom:1px solid var(--glass-border);
+  overflow-x:auto;
+}
+.nav-tab{
+  padding:8px 18px;
+  border-radius:8px;
+  border:none;
+  background:transparent;
+  color:var(--muted);
+  font-family:var(--font-ui);
+  font-size:13px;
+  font-weight:500;
+  cursor:pointer;
+  transition:.2s;
+  white-space:nowrap;
+  display:flex;align-items:center;gap:6px;
+}
+.nav-tab:hover{color:var(--text);background:var(--glass)}
+.nav-tab.active{
+  color:var(--neon);
+  background:var(--neon-dim);
+}
+.nav-tab .tab-icon{font-size:15px}
+
+/* ===== MAIN ===== */
+.main{
+  max-width:960px;
+  margin:0 auto;
+  padding:24px 24px 60px;
+  width:100%;
+}
+
+/* ===== SECTIONS ===== */
+.section{display:none}
+.section.active{display:block}
+
+/* ===== DASHBOARD ===== */
+.dash-header{
+  margin-bottom:24px;
+}
+.dash-header h2{
+  font-size:22px;
+  font-weight:600;
+  margin-bottom:4px;
+}
+.dash-header p{color:var(--muted);font-size:14px}
+
+/* KPI CARDS */
+.kpi-grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(180px,1fr));
+  gap:14px;
+  margin-bottom:24px;
+}
+.kpi-card{
+  background:var(--bg2);
+  border:1px solid var(--glass-border);
+  border-radius:var(--r-lg);
+  padding:20px;
+  position:relative;
+  overflow:hidden;
+  transition:.2s;
+}
+.kpi-card:hover{border-color:var(--neon-border)}
+.kpi-card .kpi-accent{
+  position:absolute;top:0;left:0;right:0;
+  height:2px;
+}
+.kpi-card .kpi-icon{
+  font-size:20px;
+  margin-bottom:12px;
+}
+.kpi-card .kpi-label{
+  font-size:12px;
+  color:var(--muted);
+  text-transform:uppercase;
+  letter-spacing:1px;
+  margin-bottom:6px;
+}
+.kpi-card .kpi-value{
+  font-family:var(--font-mono);
+  font-size:26px;
+  font-weight:700;
+  line-height:1;
+}
+.kpi-card .kpi-sub{
+  font-size:12px;
+  color:var(--muted);
+  margin-top:6px;
+}
+.kpi-neon .kpi-accent{background:linear-gradient(90deg,var(--neon),transparent)}
+.kpi-neon .kpi-value{color:var(--neon)}
+.kpi-blue .kpi-accent{background:linear-gradient(90deg,var(--blue),transparent)}
+.kpi-blue .kpi-value{color:var(--blue)}
+.kpi-amber .kpi-accent{background:linear-gradient(90deg,var(--amber),transparent)}
+.kpi-amber .kpi-value{color:var(--amber)}
+.kpi-red .kpi-accent{background:linear-gradient(90deg,var(--red),transparent)}
+.kpi-red .kpi-value{color:var(--red)}
+
+/* DASH ROW */
+.dash-row{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:16px;
+  margin-bottom:24px;
+}
+@media(max-width:600px){.dash-row{grid-template-columns:1fr}}
+.dash-panel{
+  background:var(--bg2);
+  border:1px solid var(--glass-border);
+  border-radius:var(--r-lg);
+  padding:20px;
+}
+.dash-panel h4{
+  font-size:13px;
+  color:var(--muted);
+  text-transform:uppercase;
+  letter-spacing:1px;
+  margin-bottom:16px;
+  display:flex;align-items:center;gap:8px;
+}
+.dash-panel h4::before{
+  content:'';
+  width:3px;height:12px;
+  background:var(--neon);
+  border-radius:2px;
+}
+
+/* LISTA ALERTAS */
+.alert-list{display:flex;flex-direction:column;gap:8px}
+.alert-item{
+  display:flex;align-items:center;gap:10px;
+  padding:10px 12px;
+  border-radius:8px;
+  font-size:13px;
+  border:1px solid;
+}
+.alert-item.danger{
+  background:var(--red-dim);
+  border-color:rgba(239,68,68,0.2);
+  color:#fca5a5;
+}
+.alert-item.warning{
+  background:var(--amber-dim);
+  border-color:rgba(245,158,11,0.2);
+  color:#fcd34d;
+}
+.alert-item.ok{
+  background:var(--neon-dim);
+  border-color:var(--neon-border);
+  color:var(--neon);
+}
+.alert-empty{color:var(--muted);font-size:13px;text-align:center;padding:16px}
+
+/* BARRAS DE FILAMENTO */
+.fil-bar-wrap{display:flex;flex-direction:column;gap:10px}
+.fil-bar-item{}
+.fil-bar-label{
+  display:flex;justify-content:space-between;
+  font-size:13px;
+  margin-bottom:5px;
+}
+.fil-bar-label .name{color:var(--text)}
+.fil-bar-label .qty{
+  font-family:var(--font-mono);
+  font-size:12px;
+  color:var(--muted);
+}
+.fil-bar-track{
+  height:6px;
+  background:var(--glass-border);
+  border-radius:3px;
+  overflow:hidden;
+}
+.fil-bar-fill{
+  height:100%;
+  border-radius:3px;
+  background:linear-gradient(90deg,var(--neon),var(--blue));
+  transition:width .4s ease;
+}
+.fil-bar-fill.low{background:linear-gradient(90deg,var(--amber),var(--red))}
+
+/* ===== CARDS DE ITEM ===== */
+.card-form{
+  background:var(--bg2);
+  border:1px solid var(--glass-border);
+  border-radius:var(--r-lg);
+  padding:24px;
+  margin-bottom:24px;
+  position:relative;
+}
+.card-form h3{
+  font-size:15px;
+  font-weight:600;
+  color:var(--neon);
+  margin-bottom:20px;
+  display:flex;align-items:center;gap:8px;
+}
+.card-form h3 span{
+  font-size:11px;
+  font-weight:400;
+  color:var(--muted);
+  font-family:var(--font-mono);
+}
+
+/* FORM FIELDS */
+.form-group{margin-bottom:14px}
+.form-group label{
+  display:block;
+  font-size:12px;
+  color:var(--muted);
+  text-transform:uppercase;
+  letter-spacing:1px;
+  margin-bottom:6px;
+}
+.form-group input,
+.form-group textarea,
+.form-group select{
+  width:100%;
+  background:var(--bg3);
+  border:1px solid var(--glass-border);
+  border-radius:8px;
+  padding:10px 14px;
+  color:var(--text);
+  font-family:var(--font-ui);
+  font-size:14px;
+  transition:.2s;
+  appearance:none;
+}
+.form-group input:focus,
+.form-group textarea:focus,
+.form-group select:focus{
+  outline:none;
+  border-color:var(--neon-border);
+  box-shadow:0 0 0 3px var(--neon-dim);
+}
+.form-group input::placeholder{color:var(--muted)}
+.form-row{display:flex;gap:10px}
+.form-row .form-group{flex:1}
+
+.submit-btn{
+  background:var(--neon);
+  color:#0a0a0f;
+  border:none;
+  padding:12px 24px;
+  border-radius:8px;
+  font-family:var(--font-ui);
+  font-size:14px;
+  font-weight:600;
+  cursor:pointer;
+  width:100%;
+  transition:.2s;
+  letter-spacing:.5px;
+}
+.submit-btn:hover{
+  background:#00e690;
+  transform:translateY(-1px);
+}
+.submit-btn:active{transform:translateY(0)}
+
+/* SECTION HEADER */
+.section-header{
+  display:flex;align-items:center;justify-content:space-between;
+  margin-bottom:16px;
+}
+.section-header h3{
+  font-size:16px;
+  font-weight:600;
+  display:flex;align-items:center;gap:8px;
+}
+.badge-count{
+  background:var(--neon-dim);
+  color:var(--neon);
+  border:1px solid var(--neon-border);
+  padding:2px 8px;
+  border-radius:100px;
+  font-size:12px;
+  font-family:var(--font-mono);
+}
+
+/* SEARCH BAR */
+.search-bar{
+  position:relative;
+  margin-bottom:16px;
+}
+.search-bar input{
+  width:100%;
+  background:var(--bg2);
+  border:1px solid var(--glass-border);
+  border-radius:8px;
+  padding:10px 14px 10px 38px;
+  color:var(--text);
+  font-family:var(--font-ui);
+  font-size:14px;
+}
+.search-bar input:focus{
+  outline:none;
+  border-color:var(--neon-border);
+}
+.search-icon{
+  position:absolute;left:12px;top:50%;transform:translateY(-50%);
+  color:var(--muted);font-size:15px;
+}
+
+/* ITEM GRID */
+.item-grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fill,minmax(260px,1fr));
+  gap:14px;
+}
+.item-card{
+  background:var(--bg2);
+  border:1px solid var(--glass-border);
+  border-radius:var(--r-lg);
+  padding:18px;
+  transition:.2s;
+  position:relative;
+  overflow:hidden;
+}
+.item-card::before{
+  content:'';
+  position:absolute;
+  left:0;top:0;bottom:0;
+  width:3px;
+  background:var(--neon);
+  border-radius:3px 0 0 3px;
+}
+.item-card:hover{
+  border-color:var(--glass-border);
+  transform:translateY(-2px);
+  box-shadow:0 8px 24px rgba(0,0,0,0.3);
+}
+.item-card.esgotado::before{background:var(--red)}
+.item-card.esgotado{opacity:.75}
+
+.item-card .item-name{
+  font-size:15px;
+  font-weight:600;
+  margin-bottom:4px;
+  display:flex;align-items:center;gap:8px;
+  flex-wrap:wrap;
+}
+.item-card .item-sub{
+  font-size:12px;
+  color:var(--muted);
+  margin-bottom:14px;
+}
+.item-card .item-qty{
+  font-family:var(--font-mono);
+  font-size:22px;
+  font-weight:700;
+  color:var(--neon);
+  margin-bottom:4px;
+}
+.item-card.esgotado .item-qty{color:var(--red)}
+.item-card .item-details{
+  font-size:12px;
+  color:var(--muted);
+  margin-bottom:14px;
+  display:flex;flex-direction:column;gap:3px;
+}
+.item-card .card-actions{
+  display:flex;gap:8px;
+}
+.btn-sm{
+  padding:6px 12px;
+  border-radius:6px;
+  border:none;
+  font-family:var(--font-ui);
+  font-size:12px;
+  font-weight:600;
+  cursor:pointer;
+  transition:.2s;
+}
+.btn-edit{
+  background:var(--amber-dim);
+  color:var(--amber);
+  border:1px solid rgba(245,158,11,0.2);
+}
+.btn-edit:hover{background:rgba(245,158,11,0.2)}
+.btn-delete{
+  background:var(--red-dim);
+  color:var(--red);
+  border:1px solid rgba(239,68,68,0.2);
+}
+.btn-delete:hover{background:rgba(239,68,68,0.2)}
+
+.badge{
+  display:inline-flex;align-items:center;
+  padding:2px 8px;
+  border-radius:100px;
+  font-size:11px;
+  font-weight:600;
+  font-family:var(--font-mono);
+  text-transform:uppercase;letter-spacing:.5px;
+}
+.badge-esgotado{background:var(--red-dim);color:var(--red);border:1px solid rgba(239,68,68,0.25)}
+.badge-ok{background:var(--neon-dim);color:var(--neon);border:1px solid var(--neon-border)}
+.badge-low{background:var(--amber-dim);color:var(--amber);border:1px solid rgba(245,158,11,0.25)}
+
+.item-img{
+  width:100%;
+  border-radius:8px;
+  margin-top:12px;
+  object-fit:cover;
+  max-height:140px;
+}
+
+.empty-state{
+  text-align:center;
+  padding:48px 24px;
+  color:var(--muted);
+  font-size:14px;
+  grid-column:1/-1;
+}
+.empty-state .empty-icon{font-size:36px;margin-bottom:12px}
+
+/* ===== MODAL EDIT ===== */
+.modal-overlay{
+  display:none;
+  position:fixed;inset:0;z-index:200;
+  background:rgba(0,0,0,0.7);
+  backdrop-filter:blur(4px);
+  align-items:center;justify-content:center;
+}
+.modal-overlay.open{display:flex}
+.modal-box{
+  background:var(--bg2);
+  border:1px solid var(--glass-border);
+  border-radius:var(--r-lg);
+  padding:28px;
+  width:100%;
+  max-width:420px;
+  position:relative;
+}
+.modal-box::before{
+  content:'';
+  position:absolute;top:-1px;left:10%;right:10%;
+  height:2px;
+  background:linear-gradient(90deg,transparent,var(--neon),transparent);
+}
+.modal-box h4{
+  font-size:16px;font-weight:600;
+  margin-bottom:20px;
+}
+.modal-close{
+  position:absolute;right:16px;top:16px;
+  background:transparent;border:none;
+  color:var(--muted);font-size:20px;cursor:pointer;
+  transition:.2s;
+}
+.modal-close:hover{color:var(--text)}
+
+/* ===== TOAST ===== */
+.toast-area{
+  position:fixed;bottom:24px;right:24px;z-index:300;
+  display:flex;flex-direction:column;gap:8px;
+}
+.toast{
+  background:var(--bg2);
+  border:1px solid var(--neon-border);
+  border-radius:8px;
+  padding:12px 18px;
+  font-size:13px;
+  color:var(--neon);
+  animation:toastIn .25s ease;
+  max-width:280px;
+}
+.toast.err{border-color:rgba(239,68,68,0.5);color:var(--red)}
+@keyframes toastIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+
+/* ===== RESPONSIVE ===== */
+@media(max-width:480px){
+  .main{padding:16px 14px 60px}
+  .topbar{padding:0 14px}
+  .nav-tabs{padding:10px 14px}
+  .kpi-grid{grid-template-columns:1fr 1fr}
+  .item-grid{grid-template-columns:1fr}
+  .user-chip span{display:none}
+}
+</style>
 </head>
 <body>
 
-    <div id="login-screen" class="screen active">
-        <div class="card">
-            <h2>Controle de Estoque 3D</h2>
-            <p>Faça login para acessar e sincronizar os dados do seu estoque.</p>
-            <button class="login-btn" id="btn-login-google">
-                <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google" width="18">
-                Entrar com o Google
-            </button>
+<!-- ===== LOGIN ===== -->
+<div id="login-screen" class="screen active">
+  <div class="login-box">
+    <div class="login-logo">GLM Studio</div>
+    <h2>Estoque 3D ☁️</h2>
+    <p>Faça login para acessar e sincronizar seu estoque em tempo real.</p>
+    <button class="login-btn" id="btn-login-google">
+      <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google" width="18">
+      Entrar com o Google
+    </button>
+  </div>
+</div>
+
+<!-- ===== APP ===== -->
+<div id="app-screen" class="screen">
+
+  <!-- TOPBAR -->
+  <header class="topbar">
+    <div class="topbar-brand">
+      <span class="dot"></span>
+      Estoque 3D
+    </div>
+    <div style="display:flex;align-items:center;gap:10px">
+      <div class="user-chip">
+        <img id="user-photo" src="" alt="User">
+        <span id="user-name">Usuário</span>
+      </div>
+      <button class="logout-btn" id="btn-logout">Sair</button>
+    </div>
+  </header>
+
+  <!-- NAV TABS -->
+  <nav class="nav-tabs">
+    <button class="nav-tab active" onclick="switchTab('dashboard',this)">
+      <span class="tab-icon">⬡</span> Dashboard
+    </button>
+    <button class="nav-tab" onclick="switchTab('filamentos',this)">
+      <span class="tab-icon">🧵</span> Filamentos
+    </button>
+    <button class="nav-tab" onclick="switchTab('produtos',this)">
+      <span class="tab-icon">📦</span> Produtos
+    </button>
+  </nav>
+
+  <!-- MAIN -->
+  <main class="main">
+
+    <!-- ==== DASHBOARD ==== -->
+    <div id="dashboard" class="section active">
+      <div class="dash-header">
+        <h2>Visão Geral</h2>
+        <p>Resumo em tempo real do seu estoque 3D</p>
+      </div>
+
+      <!-- KPIs -->
+      <div class="kpi-grid">
+        <div class="kpi-card kpi-neon">
+          <div class="kpi-accent"></div>
+          <div class="kpi-icon">🧵</div>
+          <div class="kpi-label">Tipos de Filamento</div>
+          <div class="kpi-value" id="kpi-fil-total">—</div>
+          <div class="kpi-sub" id="kpi-fil-sub">carregando...</div>
         </div>
+        <div class="kpi-card kpi-blue">
+          <div class="kpi-accent"></div>
+          <div class="kpi-icon">📦</div>
+          <div class="kpi-label">Produtos Prontos</div>
+          <div class="kpi-value" id="kpi-prod-total">—</div>
+          <div class="kpi-sub" id="kpi-prod-sub">carregando...</div>
+        </div>
+        <div class="kpi-card kpi-amber">
+          <div class="kpi-accent"></div>
+          <div class="kpi-icon">⚠️</div>
+          <div class="kpi-label">Alertas de Estoque</div>
+          <div class="kpi-value" id="kpi-alertas">—</div>
+          <div class="kpi-sub">esgotados + críticos</div>
+        </div>
+        <div class="kpi-card kpi-red" id="kpi-esgotado-card">
+          <div class="kpi-accent"></div>
+          <div class="kpi-icon">🔴</div>
+          <div class="kpi-label">Itens Esgotados</div>
+          <div class="kpi-value" id="kpi-esgotados">—</div>
+          <div class="kpi-sub">filamentos + produtos</div>
+        </div>
+      </div>
+
+      <!-- DASH ROW -->
+      <div class="dash-row">
+        <!-- Alertas -->
+        <div class="dash-panel">
+          <h4>Alertas de Estoque</h4>
+          <div class="alert-list" id="dash-alertas">
+            <div class="alert-empty">Carregando...</div>
+          </div>
+        </div>
+
+        <!-- Filamentos por nível -->
+        <div class="dash-panel">
+          <h4>Nível dos Filamentos</h4>
+          <div class="fil-bar-wrap" id="dash-fil-bars">
+            <div class="alert-empty">Carregando...</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Últimos Produtos -->
+      <div class="dash-panel" style="margin-bottom:16px">
+        <h4>Produtos com Estoque Crítico</h4>
+        <div class="item-grid" id="dash-prod-criticos" style="margin-top:8px">
+          <div class="alert-empty">Carregando...</div>
+        </div>
+      </div>
     </div>
 
-    <div id="app-screen" class="screen">
-        <div class="container">
-            
-            <div class="header-area">
-                <h1>Estoque 3D ☁️</h1>
-                <div class="user-info">
-                    <img id="user-photo" src="" alt="User">
-                    <span id="user-name">Usuário</span>
-                    <button class="logout-btn" id="btn-logout">Sair</button>
-                </div>
+    <!-- ==== FILAMENTOS ==== -->
+    <div id="filamentos" class="section">
+      <div class="card-form">
+        <h3>Adicionar Filamento <span>/ cadastro</span></h3>
+        <form id="form-filamento">
+          <div class="form-row">
+            <div class="form-group">
+              <label>Marca</label>
+              <input type="text" id="fil-marca" required placeholder="Ex: Esun, Voolt3D">
             </div>
+            <div class="form-group">
+              <label>Cor</label>
+              <input type="text" id="fil-cor" required placeholder="Ex: Preto Fosco">
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group" style="flex:2">
+              <label>Quantidade Disponível</label>
+              <input type="number" step="any" id="fil-qtd" required placeholder="Ex: 850">
+            </div>
+            <div class="form-group">
+              <label>Unidade</label>
+              <select id="fil-unidade">
+                <option value="g">g</option>
+                <option value="kg">kg</option>
+              </select>
+            </div>
+          </div>
+          <button type="submit" class="submit-btn">+ Salvar Filamento</button>
+        </form>
+      </div>
 
-            <div class="tabs">
-                <button class="tab-btn active" onclick="switchTab('filamentos')">Filamentos</button>
-                <button class="tab-btn" onclick="switchTab('produtos')">Produtos Prontos</button>
-            </div>
-
-            <div id="filamentos" class="section active">
-                <div class="card">
-                    <h3>Adicionar Filamento</h3>
-                    <form id="form-filamento">
-                        <div class="form-group">
-                            <label>Marca</label>
-                            <input type="text" id="fil-marca" required placeholder="Ex: Esun, Voolt3D">
-                        </div>
-                        <div class="form-group">
-                            <label>Cor</label>
-                            <input type="text" id="fil-cor" required placeholder="Ex: Preto Fosco">
-                        </div>
-                        <div class="form-row">
-                            <div class="form-group" style="flex: 1; margin-bottom: 15px;">
-                                <label>Quantidade Disponível</label>
-                                <input type="number" step="any" id="fil-qtd" required placeholder="Ex: 850 ou 1.5">
-                            </div>
-                            <div class="form-group" style="width: 80px; margin-bottom: 15px;">
-                                <label>Unidade</label>
-                                <select id="fil-unidade">
-                                    <option value="g">g</option>
-                                    <option value="kg">kg</option>
-                                </select>
-                            </div>
-                        </div>
-                        <button type="submit" class="submit-btn">Salvar Filamento</button>
-                    </form>
-                </div>
-                <h3>Estoque Atual</h3>
-                <div id="lista-filamentos" class="item-list">Carregando filamentos...</div>
-            </div>
-
-            <div id="produtos" class="section">
-                <div class="card">
-                    <h3>Cadastrar Produto</h3>
-                    <form id="form-produto">
-                        <div class="form-group">
-                            <label>Nome do Produto</label>
-                            <input type="text" id="prod-nome" required placeholder="Ex: Vaso Decorativo Geométrico">
-                        </div>
-                        <div class="form-group">
-                            <label>Descrição</label>
-                            <textarea id="prod-desc" rows="2" placeholder="Detalhes do produto..."></textarea>
-                        </div>
-                        <div class="form-group">
-                            <label>Quantidade em Estoque</label>
-                            <input type="number" id="prod-qtd" required placeholder="Ex: 5">
-                        </div>
-                        <div class="form-group">
-                            <label>Tempo de Produção</label>
-                            <input type="text" id="prod-tempo" required placeholder="Ex: 2h 30m">
-                        </div>
-                        <div class="form-row">
-                            <div class="form-group" style="flex: 1; margin-bottom: 15px;">
-                                <label>Gasto de Filamento</label>
-                                <input type="number" step="any" id="prod-gasto" required placeholder="Ex: 120 ou 0.5">
-                            </div>
-                            <div class="form-group" style="width: 80px; margin-bottom: 15px;">
-                                <label>Unidade</label>
-                                <select id="prod-unidade">
-                                    <option value="g">g</option>
-                                    <option value="kg">kg</option>
-                                </select>
-                            </div>
-                        </div>
-                        <div class="form-group">
-                            <label>URL da Imagem (Opcional por enquanto)</label>
-                            <input type="url" id="prod-img" placeholder="https://link-da-imagem.com/img.jpg">
-                        </div>
-                        <button type="submit" class="submit-btn">Salvar Produto</button>
-                    </form>
-                </div>
-                <h3>Produtos Cadastrados</h3>
-                <div id="lista-produtos" class="item-list">Carregando produtos...</div>
-            </div>
-        </div>
+      <div class="section-header">
+        <h3>Estoque Atual <span class="badge-count" id="count-fil">0</span></h3>
+      </div>
+      <div class="search-bar">
+        <span class="search-icon">🔍</span>
+        <input type="text" id="search-fil" placeholder="Buscar por marca ou cor..." oninput="filtrarLista('filamentos')">
+      </div>
+      <div class="item-grid" id="lista-filamentos">
+        <div class="empty-state"><div class="empty-icon">🧵</div>Nenhum filamento cadastrado.</div>
+      </div>
     </div>
 
+    <!-- ==== PRODUTOS ==== -->
+    <div id="produtos" class="section">
+      <div class="card-form">
+        <h3>Cadastrar Produto <span>/ cadastro</span></h3>
+        <form id="form-produto">
+          <div class="form-group">
+            <label>Nome do Produto</label>
+            <input type="text" id="prod-nome" required placeholder="Ex: Vaso Decorativo Geométrico">
+          </div>
+          <div class="form-group">
+            <label>Descrição</label>
+            <textarea id="prod-desc" rows="2" placeholder="Detalhes do produto..."></textarea>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Quantidade em Estoque</label>
+              <input type="number" id="prod-qtd" required placeholder="Ex: 5">
+            </div>
+            <div class="form-group">
+              <label>Tempo de Produção</label>
+              <input type="text" id="prod-tempo" required placeholder="Ex: 2h 30m">
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group" style="flex:2">
+              <label>Gasto de Filamento</label>
+              <input type="number" step="any" id="prod-gasto" required placeholder="Ex: 120">
+            </div>
+            <div class="form-group">
+              <label>Unidade</label>
+              <select id="prod-unidade">
+                <option value="g">g</option>
+                <option value="kg">kg</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>URL da Imagem (Opcional)</label>
+            <input type="url" id="prod-img" placeholder="https://link-da-imagem.com/img.jpg">
+          </div>
+          <button type="submit" class="submit-btn">+ Salvar Produto</button>
+        </form>
+      </div>
+
+      <div class="section-header">
+        <h3>Produtos Cadastrados <span class="badge-count" id="count-prod">0</span></h3>
+      </div>
+      <div class="search-bar">
+        <span class="search-icon">🔍</span>
+        <input type="text" id="search-prod" placeholder="Buscar por nome ou descrição..." oninput="filtrarLista('produtos')">
+      </div>
+      <div class="item-grid" id="lista-produtos">
+        <div class="empty-state"><div class="empty-icon">📦</div>Nenhum produto cadastrado.</div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<!-- ===== MODAL EDITAR ===== -->
+<div class="modal-overlay" id="modal-edit">
+  <div class="modal-box">
+    <button class="modal-close" onclick="fecharModal()">✕</button>
+    <h4 id="modal-titulo">Editar quantidade</h4>
+    <div class="form-group">
+      <label id="modal-label">Nova Quantidade</label>
+      <input type="number" step="any" id="modal-input" placeholder="0">
+    </div>
+    <button class="submit-btn" onclick="confirmarEdicao()">Salvar Alteração</button>
+  </div>
+</div>
+
+<!-- ===== TOASTS ===== -->
+<div class="toast-area" id="toast-area"></div>
+
+<!-- ===== FIREBASE ===== -->
 <script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
-    import { getFirestore, collection, addDoc, onSnapshot, doc, updateDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js";
-    import { getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-auth.js";
+import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
+import { getFirestore, collection, addDoc, onSnapshot, doc, updateDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js";
+import { getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-auth.js";
 
-    // Suas chaves oficiais
-    const firebaseConfig = {
-        apiKey: "AIzaSyDEWD_R8z5dFFEhRQ1bUUpk9CCo47a7RHA",
-        authDomain: "estoque-3d.firebaseapp.com",
-        projectId: "estoque-3d",
-        storageBucket: "estoque-3d.firebasestorage.app",
-        messagingSenderId: "970757670839",
-        appId: "1:970757670839:web:cf41d4c9ad4acac96c0a32",
-        measurementId: "G-9RL1075L3T"
-    };
+const firebaseConfig = {
+  apiKey: "AIzaSyDEWD_R8z5dFFEhRQ1bUUpk9CCo47a7RHA",
+  authDomain: "estoque-3d.firebaseapp.com",
+  projectId: "estoque-3d",
+  storageBucket: "estoque-3d.firebasestorage.app",
+  messagingSenderId: "970757670839",
+  appId: "1:970757670839:web:cf41d4c9ad4acac96c0a32",
+  measurementId: "G-9RL1075L3T"
+};
 
-    const app = initializeApp(firebaseConfig);
-    const db = getFirestore(app);
-    const auth = getAuth(app);
-    const provider = new GoogleAuthProvider();
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+const auth = getAuth(app);
+const provider = new GoogleAuthProvider();
 
-    // 🔴 AQUI VOCÊ COLOCA OS E-MAILS AUTORIZADOS 🔴
-    const emailsPermitidos = [
-        "guigas83@gmail.com", 
-        "luciana.lukassantos@gmail.com"
-        // Coloque os e-mails entre aspas duplas, separados por vírgula.
-    ];
+const emailsPermitidos = [
+  "guigas83@gmail.com",
+  "luciana.lukassantos@gmail.com"
+];
 
-    const colFilamentos = collection(db, "filamentos");
-    const colProdutos = collection(db, "produtos");
+const colFilamentos = collection(db, "filamentos");
+const colProdutos = collection(db, "produtos");
 
-    const loginScreen = document.getElementById('login-screen');
-    const appScreen = document.getElementById('app-screen');
+// Estado em memória
+window._filamentos = [];
+window._produtos = [];
+window._editCtx = null;
 
-    // Botões de Autenticação
-    document.getElementById('btn-login-google').addEventListener('click', () => signInWithPopup(auth, provider).catch(e => alert(e.message)));
-    document.getElementById('btn-logout').addEventListener('click', () => signOut(auth));
+// Toast
+window.toast = function(msg, tipo='ok'){
+  const el = document.createElement('div');
+  el.className = 'toast' + (tipo==='err'?' err':'');
+  el.textContent = msg;
+  document.getElementById('toast-area').appendChild(el);
+  setTimeout(()=>el.remove(), 3000);
+};
 
-    // Controle de Acesso
-    onAuthStateChanged(auth, (user) => {
-        if (user) {
-            if (emailsPermitidos.includes(user.email)) {
-                loginScreen.classList.remove('active');
-                appScreen.classList.add('active');
-                document.getElementById('user-name').innerText = user.displayName;
-                document.getElementById('user-photo').src = user.photoURL || "https://via.placeholder.com/32";
-                activarEscutadoresBanco();
-            } else {
-                alert(`Acesso negado!\nO e-mail ${user.email} não tem permissão.`);
-                signOut(auth);
-            }
-        } else {
-            appScreen.classList.remove('active');
-            loginScreen.classList.add('active');
-        }
-    });
+// Modal
+window.abrirModal = function(colecao, id, nome, qtdAtual, und){
+  window._editCtx = {colecao, id};
+  document.getElementById('modal-titulo').textContent = `Editar: ${nome}`;
+  document.getElementById('modal-label').textContent = `Nova quantidade em ${und}`;
+  document.getElementById('modal-input').value = qtdAtual;
+  document.getElementById('modal-edit').classList.add('open');
+  document.getElementById('modal-input').focus();
+};
+window.fecharModal = function(){
+  document.getElementById('modal-edit').classList.remove('open');
+  window._editCtx = null;
+};
+window.confirmarEdicao = async function(){
+  const val = document.getElementById('modal-input').value;
+  if(val === '' || window._editCtx === null) return;
+  try{
+    await updateDoc(doc(db, window._editCtx.colecao, window._editCtx.id), {qtd: Number(val)});
+    toast('Quantidade atualizada ✓');
+    fecharModal();
+  }catch(e){toast('Erro: '+e.message,'err')}
+};
 
-    // Funções Globais (Editar Qtd e Excluir)
-    window.atualizarQtd = async (colecao, id, qtdAtual, unidade) => {
-        // Agora informa a unidade ao usuário na hora de atualizar
-        const novaQtd = prompt(`Atualizar quantidade.\nNova quantidade em "${unidade}" (Digite 0 se esgotou):`, qtdAtual);
-        if (novaQtd !== null && novaQtd.trim() !== "") {
-            try {
-                const docRef = doc(db, colecao, id);
-                await updateDoc(docRef, { qtd: Number(novaQtd) });
-            } catch (error) { alert("Erro ao atualizar: " + error.message); }
-        }
-    };
+// Excluir
+window.excluirItem = async function(colecao, id, nome){
+  if(!confirm(`Excluir "${nome}" permanentemente?`)) return;
+  try{
+    await deleteDoc(doc(db, colecao, id));
+    toast('Item excluído');
+  }catch(e){toast('Erro: '+e.message,'err')}
+};
 
-    window.excluirItem = async (colecao, id) => {
-        if (confirm("Tem certeza que deseja excluir este item permanentemente?")) {
-            try {
-                const docRef = doc(db, colecao, id);
-                await deleteDoc(docRef);
-            } catch (error) { alert("Erro ao excluir: " + error.message); }
-        }
-    };
+// Filtrar lista
+window.filtrarLista = function(tipo){
+  const q = (tipo==='filamentos'
+    ? document.getElementById('search-fil')
+    : document.getElementById('search-prod')
+  ).value.toLowerCase();
+  const dados = tipo==='filamentos' ? window._filamentos : window._produtos;
+  const filtrado = dados.filter(d =>
+    tipo==='filamentos'
+      ? (d.marca||'').toLowerCase().includes(q)||(d.cor||'').toLowerCase().includes(q)
+      : (d.nome||'').toLowerCase().includes(q)||(d.desc||'').toLowerCase().includes(q)
+  );
+  renderLista(tipo, filtrado);
+};
 
-    // Cadastro de Filamento
-    document.getElementById('form-filamento').addEventListener('submit', async function(e) {
-        e.preventDefault();
-        try {
-            await addDoc(colFilamentos, {
-                marca: document.getElementById('fil-marca').value,
-                cor: document.getElementById('fil-cor').value,
-                qtd: Number(document.getElementById('fil-qtd').value),
-                unidade: document.getElementById('fil-unidade').value, // <--- NOVO CAMPO
-                criadoEm: Date.now(),
-                adicionadoPor: auth.currentUser.email
-            });
-            this.reset();
-        } catch (error) { alert("Erro ao salvar filamento: " + error.message); }
-    });
-
-    // Cadastro de Produto
-    document.getElementById('form-produto').addEventListener('submit', async function(e) {
-        e.preventDefault();
-        try {
-            await addDoc(colProdutos, {
-                nome: document.getElementById('prod-nome').value,
-                desc: document.getElementById('prod-desc').value,
-                qtd: Number(document.getElementById('prod-qtd').value),
-                tempo: document.getElementById('prod-tempo').value,
-                gasto: Number(document.getElementById('prod-gasto').value),
-                unidade: document.getElementById('prod-unidade').value, // <--- NOVO CAMPO
-                img: document.getElementById('prod-img').value,
-                criadoEm: Date.now(),
-                adicionadoPor: auth.currentUser.email
-            });
-            this.reset();
-        } catch (error) { alert("Erro ao salvar produto: " + error.message); }
-    });
-
-    // Escutadores em Tempo Real
-    let unsubscribeFilamentos, unsubscribeProdutos;
-
-    function activarEscutadoresBanco() {
-        if(unsubscribeFilamentos) unsubscribeFilamentos();
-        if(unsubscribeProdutos) unsubscribeProdutos();
-
-        // Filamentos
-        unsubscribeFilamentos = onSnapshot(colFilamentos, (snapshot) => {
-            const div = document.getElementById('lista-filamentos');
-            div.innerHTML = '';
-            if(snapshot.empty) { div.innerHTML = 'Nenhum filamento cadastrado.'; return; }
-            
-            snapshot.forEach(docSnap => {
-                const f = docSnap.data();
-                const id = docSnap.id;
-                
-                const estaEsgotado = f.qtd <= 0;
-                const classeCard = estaEsgotado ? 'esgotado' : '';
-                const seloEsgotado = estaEsgotado ? '<span class="badge-esgotado">ESGOTADO</span>' : '';
-                
-                // Trata a unidade (se for item velho que não tem unidade, usa 'g' por padrão)
-                const und = f.unidade || 'g'; 
-
-                div.innerHTML += `
-                    <div class="item-card ${classeCard}">
-                        <strong>${f.cor}</strong> (${f.marca}) ${seloEsgotado}<br>
-                        Quantidade: <strong>${f.qtd} ${und}</strong><br>
-                        
-                        <div class="card-actions">
-                            <button class="btn-edit" onclick="atualizarQtd('filamentos', '${id}', ${f.qtd}, '${und}')">✏️ Alterar Qtd</button>
-                            <button class="btn-delete" onclick="excluirItem('filamentos', '${id}')">🗑️ Excluir</button>
-                        </div>
-                        <small style="color: #666; font-size: 0.8em;">Por: ${f.adicionadoPor || 'Sistema'}</small>
-                    </div>
-                `;
-            });
-        });
-
-        // Produtos
-        unsubscribeProdutos = onSnapshot(colProdutos, (snapshot) => {
-            const div = document.getElementById('lista-produtos');
-            div.innerHTML = '';
-            if(snapshot.empty) { div.innerHTML = 'Nenhum produto cadastrado.'; return; }
-
-            snapshot.forEach(docSnap => {
-                const p = docSnap.data();
-                const id = docSnap.id;
-                
-                const estaEsgotado = p.qtd <= 0;
-                const classeCard = estaEsgotado ? 'esgotado' : '';
-                const seloEsgotado = estaEsgotado ? '<span class="badge-esgotado">ESGOTADO</span>' : '';
-                const und = p.unidade || 'g';
-                const imgTag = p.img ? `<img src="${p.img}" alt="${p.nome}">` : '';
-
-                div.innerHTML += `
-                    <div class="item-card ${classeCard}">
-                        <strong>${p.nome}</strong> ${seloEsgotado}<br>
-                        Estoque: <strong>${p.qtd} unidades</strong><br>
-                        <small>${p.desc}</small><br>
-                        <small>⏱️ ${p.tempo} | ⚖️ Custo: ${p.gasto} ${und}</small><br>
-                        
-                        <div class="card-actions">
-                            <button class="btn-edit" onclick="atualizarQtd('produtos', '${id}', ${p.qtd}, 'unidades')">✏️ Alterar Qtd</button>
-                            <button class="btn-delete" onclick="excluirItem('produtos', '${id}')">🗑️ Excluir</button>
-                        </div>
-                        <small style="color: #666; font-size: 0.8em;">Por: ${p.adicionadoPor || 'Sistema'}</small>
-                        ${imgTag}
-                    </div>
-                `;
-            });
-        });
+// ====== RENDER ======
+function renderLista(tipo, dados){
+  const el = document.getElementById(tipo==='filamentos'?'lista-filamentos':'lista-produtos');
+  if(!dados.length){
+    el.innerHTML = `<div class="empty-state"><div class="empty-icon">${tipo==='filamentos'?'🧵':'📦'}</div>Nenhum item encontrado.</div>`;
+    return;
+  }
+  el.innerHTML = '';
+  dados.forEach(d => {
+    const div = document.createElement('div');
+    if(tipo==='filamentos'){
+      const esg = d.qtd <= 0;
+      const low = !esg && d.qtd < 200;
+      const und = d.unidade||'g';
+      div.className = 'item-card'+(esg?' esgotado':'');
+      div.innerHTML = `
+        <div class="item-name">
+          ${d.cor}
+          ${esg?'<span class="badge badge-esgotado">ESGOTADO</span>':low?'<span class="badge badge-low">CRÍTICO</span>':'<span class="badge badge-ok">OK</span>'}
+        </div>
+        <div class="item-sub">${d.marca}</div>
+        <div class="item-qty">${d.qtd} ${und}</div>
+        <div class="card-actions">
+          <button class="btn-sm btn-edit" onclick="abrirModal('filamentos','${d._id}','${d.cor} (${d.marca})',${d.qtd},'${und}')">✏️ Editar</button>
+          <button class="btn-sm btn-delete" onclick="excluirItem('filamentos','${d._id}','${d.cor}')">🗑️ Excluir</button>
+        </div>
+        <small style="color:var(--muted);font-size:11px;margin-top:8px;display:block">Por: ${d.adicionadoPor||'Sistema'}</small>
+      `;
+    } else {
+      const esg = d.qtd <= 0;
+      const low = !esg && d.qtd <= 2;
+      const und = d.unidade||'g';
+      div.className = 'item-card'+(esg?' esgotado':'');
+      div.innerHTML = `
+        <div class="item-name">
+          ${d.nome}
+          ${esg?'<span class="badge badge-esgotado">ESGOTADO</span>':low?'<span class="badge badge-low">CRÍTICO</span>':'<span class="badge badge-ok">OK</span>'}
+        </div>
+        <div class="item-sub">${d.desc||'—'}</div>
+        <div class="item-qty">${d.qtd} un.</div>
+        <div class="item-details">
+          <span>⏱️ ${d.tempo}</span>
+          <span>⚖️ ${d.gasto} ${und} de filamento</span>
+        </div>
+        <div class="card-actions">
+          <button class="btn-sm btn-edit" onclick="abrirModal('produtos','${d._id}','${d.nome}',${d.qtd},'unidades')">✏️ Editar</button>
+          <button class="btn-sm btn-delete" onclick="excluirItem('produtos','${d._id}','${d.nome}')">🗑️ Excluir</button>
+        </div>
+        <small style="color:var(--muted);font-size:11px;margin-top:8px;display:block">Por: ${d.adicionadoPor||'Sistema'}</small>
+        ${d.img?`<img src="${d.img}" alt="${d.nome}" class="item-img">`:''}
+      `;
     }
+    el.appendChild(div);
+  });
+}
+
+// ====== DASHBOARD ======
+function atualizarDashboard(){
+  const fils = window._filamentos;
+  const prods = window._produtos;
+
+  // KPIs
+  const filTotal = fils.length;
+  const filEsg = fils.filter(f=>f.qtd<=0).length;
+  const prodTotal = prods.length;
+  const prodEsg = prods.filter(p=>p.qtd<=0).length;
+  const totalEsg = filEsg + prodEsg;
+  const filCrit = fils.filter(f=>f.qtd>0&&f.qtd<200).length;
+  const prodCrit = prods.filter(p=>p.qtd>0&&p.qtd<=2).length;
+  const totalAlertas = totalEsg + filCrit + prodCrit;
+
+  document.getElementById('kpi-fil-total').textContent = filTotal;
+  document.getElementById('kpi-fil-sub').textContent = filEsg > 0 ? `${filEsg} esgotado(s)` : 'todos com estoque';
+  document.getElementById('kpi-prod-total').textContent = prodTotal;
+  document.getElementById('kpi-prod-sub').textContent = prodEsg > 0 ? `${prodEsg} esgotado(s)` : 'todos disponíveis';
+  document.getElementById('kpi-alertas').textContent = totalAlertas;
+  document.getElementById('kpi-esgotados').textContent = totalEsg;
+
+  // Alertas
+  const alertDiv = document.getElementById('dash-alertas');
+  if(totalAlertas === 0){
+    alertDiv.innerHTML = '<div class="alert-item ok">✓ Nenhum alerta de estoque</div>';
+  } else {
+    let html = '';
+    fils.filter(f=>f.qtd<=0).forEach(f=>{
+      html += `<div class="alert-item danger">🔴 Filamento ESGOTADO: ${f.cor} (${f.marca})</div>`;
+    });
+    fils.filter(f=>f.qtd>0&&f.qtd<200).forEach(f=>{
+      html += `<div class="alert-item warning">⚠️ Filamento crítico: ${f.cor} (${f.qtd}${f.unidade||'g'})</div>`;
+    });
+    prods.filter(p=>p.qtd<=0).forEach(p=>{
+      html += `<div class="alert-item danger">🔴 Produto ESGOTADO: ${p.nome}</div>`;
+    });
+    prods.filter(p=>p.qtd>0&&p.qtd<=2).forEach(p=>{
+      html += `<div class="alert-item warning">⚠️ Estoque crítico: ${p.nome} (${p.qtd} un.)</div>`;
+    });
+    alertDiv.innerHTML = html;
+  }
+
+  // Barras de filamento
+  const barsDiv = document.getElementById('dash-fil-bars');
+  if(!fils.length){
+    barsDiv.innerHTML = '<div class="alert-empty">Nenhum filamento cadastrado</div>';
+  } else {
+    const maxQtd = Math.max(...fils.map(f=>{
+      const q = f.unidade==='kg' ? f.qtd*1000 : f.qtd;
+      return q;
+    }), 1);
+    barsDiv.innerHTML = fils.slice(0,6).map(f=>{
+      const qG = f.unidade==='kg' ? f.qtd*1000 : f.qtd;
+      const pct = Math.min(100, Math.round(qG/maxQtd*100));
+      const isLow = qG < 200;
+      return `
+        <div class="fil-bar-item">
+          <div class="fil-bar-label">
+            <span class="name">${f.cor} <small style="color:var(--muted)">${f.marca}</small></span>
+            <span class="qty">${f.qtd}${f.unidade||'g'}</span>
+          </div>
+          <div class="fil-bar-track">
+            <div class="fil-bar-fill${isLow?' low':''}" style="width:${pct}%"></div>
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  // Produtos críticos
+  const critDiv = document.getElementById('dash-prod-criticos');
+  const criticos = prods.filter(p=>p.qtd<=2).slice(0,4);
+  if(!criticos.length){
+    critDiv.innerHTML = '<div class="alert-empty">Nenhum produto em estado crítico</div>';
+  } else {
+    critDiv.innerHTML = '';
+    criticos.forEach(p=>{
+      const div = document.createElement('div');
+      const esg = p.qtd<=0;
+      div.className = 'item-card'+(esg?' esgotado':'');
+      div.innerHTML = `
+        <div class="item-name">${p.nome} ${esg?'<span class="badge badge-esgotado">ESGOTADO</span>':'<span class="badge badge-low">CRÍTICO</span>'}</div>
+        <div class="item-sub">${p.desc||'—'}</div>
+        <div class="item-qty">${p.qtd} un.</div>
+        <div class="card-actions">
+          <button class="btn-sm btn-edit" onclick="abrirModal('produtos','${p._id}','${p.nome}',${p.qtd},'unidades')">✏️ Repor</button>
+        </div>
+      `;
+      critDiv.appendChild(div);
+    });
+  }
+}
+
+// ====== AUTH ======
+document.getElementById('btn-login-google').addEventListener('click', ()=>
+  signInWithPopup(auth, provider).catch(e=>toast(e.message,'err'))
+);
+document.getElementById('btn-logout').addEventListener('click', ()=>signOut(auth));
+
+let unsubFil, unsubProd;
+
+onAuthStateChanged(auth, user=>{
+  if(user){
+    if(emailsPermitidos.includes(user.email)){
+      document.getElementById('login-screen').classList.remove('active');
+      document.getElementById('app-screen').classList.add('active');
+      document.getElementById('user-name').textContent = user.displayName;
+      document.getElementById('user-photo').src = user.photoURL||'https://via.placeholder.com/32';
+      iniciarEscutadores();
+    } else {
+      toast(`Acesso negado: ${user.email}`,'err');
+      signOut(auth);
+    }
+  } else {
+    document.getElementById('app-screen').classList.remove('active');
+    document.getElementById('login-screen').classList.add('active');
+    if(unsubFil) unsubFil();
+    if(unsubProd) unsubProd();
+  }
+});
+
+function iniciarEscutadores(){
+  if(unsubFil) unsubFil();
+  if(unsubProd) unsubProd();
+
+  unsubFil = onSnapshot(colFilamentos, snap=>{
+    window._filamentos = snap.docs.map(d=>({_id:d.id,...d.data()}));
+    document.getElementById('count-fil').textContent = window._filamentos.length;
+    renderLista('filamentos', window._filamentos);
+    atualizarDashboard();
+  });
+
+  unsubProd = onSnapshot(colProdutos, snap=>{
+    window._produtos = snap.docs.map(d=>({_id:d.id,...d.data()}));
+    document.getElementById('count-prod').textContent = window._produtos.length;
+    renderLista('produtos', window._produtos);
+    atualizarDashboard();
+  });
+}
+
+// ====== FORMS ======
+document.getElementById('form-filamento').addEventListener('submit', async function(e){
+  e.preventDefault();
+  try{
+    await addDoc(colFilamentos,{
+      marca: document.getElementById('fil-marca').value,
+      cor: document.getElementById('fil-cor').value,
+      qtd: Number(document.getElementById('fil-qtd').value),
+      unidade: document.getElementById('fil-unidade').value,
+      criadoEm: Date.now(),
+      adicionadoPor: auth.currentUser.email
+    });
+    this.reset();
+    toast('Filamento salvo ✓');
+  }catch(e){toast('Erro: '+e.message,'err')}
+});
+
+document.getElementById('form-produto').addEventListener('submit', async function(e){
+  e.preventDefault();
+  try{
+    await addDoc(colProdutos,{
+      nome: document.getElementById('prod-nome').value,
+      desc: document.getElementById('prod-desc').value,
+      qtd: Number(document.getElementById('prod-qtd').value),
+      tempo: document.getElementById('prod-tempo').value,
+      gasto: Number(document.getElementById('prod-gasto').value),
+      unidade: document.getElementById('prod-unidade').value,
+      img: document.getElementById('prod-img').value,
+      criadoEm: Date.now(),
+      adicionadoPor: auth.currentUser.email
+    });
+    this.reset();
+    toast('Produto salvo ✓');
+  }catch(e){toast('Erro: '+e.message,'err')}
+});
+
+// Fechar modal clicando fora
+document.getElementById('modal-edit').addEventListener('click', function(e){
+  if(e.target===this) fecharModal();
+});
+// Enter no modal
+document.getElementById('modal-input').addEventListener('keydown', e=>{
+  if(e.key==='Enter') confirmarEdicao();
+});
 </script>
 
 <script>
-    function switchTab(tabId) {
-        document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
-        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-        document.getElementById(tabId).classList.add('active');
-        event.currentTarget.classList.add('active');
-    }
+function switchTab(tabId, btn){
+  document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));
+  document.querySelectorAll('.nav-tab').forEach(b=>b.classList.remove('active'));
+  document.getElementById(tabId).classList.add('active');
+  btn.classList.add('active');
+}
 </script>
 </body>
 </html>

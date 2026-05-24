@@ -97,8 +97,10 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
 .fil-bar-track{height:8px;background:var(--glass-border);border-radius:4px;overflow:hidden}
 .fil-bar-fill{height:100%;border-radius:4px;background:linear-gradient(90deg,var(--neon),var(--blue));transition:width .5s ease}
 .fil-bar-fill.low{background:linear-gradient(90deg,var(--amber),var(--red))}
+.fil-bar-fill.esgotado{background:var(--red);opacity:.5}
 .fil-bar-meta{display:flex;justify-content:space-between;margin-top:4px;font-size:10px;color:var(--muted)}
-.fil-bar-meta .consumed{color:rgba(239,68,68,0.7)}
+.fil-bar-meta .consumed{color:var(--amber);font-weight:600}
+.fil-bar-preco{font-size:10px;color:var(--muted);margin-top:2px}
 
 /* FORMS */
 .card-form{background:var(--bg2);border:1px solid var(--glass-border);border-radius:var(--r-lg);padding:24px;margin-bottom:20px;position:relative}
@@ -865,7 +867,6 @@ function multiplicarTempo(tempoStr, qtd){
 window.multiplicarTempo = multiplicarTempo;
 
 // ── RECEITA DE FILAMENTOS (Estoque + Produtos) ───────────
-// Retorna receita com label, gramas e filId
 function getProdutoReceita(prod){
   if(prod?.receita && prod.receita.length>0) return prod.receita;
   if(prod?.gasto>0){
@@ -878,7 +879,6 @@ function receitaTotalGramas(receita){
   return receita.reduce((s,r)=>s+(r.gramas||0),0);
 }
 
-// Calcula custo de material da receita usando preços dos filamentos
 function calcularCustoReceita(receita){
   let total=0;
   receita.forEach(r=>{
@@ -889,7 +889,6 @@ function calcularCustoReceita(receita){
   return total;
 }
 
-// Adicionar linha de receita (contexto: 'add' ou 'edit') — usa select de filamentos
 window.adicionarReceitaRow = function(ctx, filId='', gramas=''){
   const listId = ctx+'-receita-list';
   const emptyId = ctx+'-receita-empty';
@@ -901,7 +900,6 @@ window.adicionarReceitaRow = function(ctx, filId='', gramas=''){
   const row = document.createElement('div');
   row.className = 'receita-row';
 
-  // Montar options de filamentos
   let opts='<option value="">— Selecionar —</option>';
   window._filamentos.forEach(f=>{
     const precoStr=f.precoKg?` — R$${Number(f.precoKg).toFixed(2)}/kg`:'';
@@ -1241,7 +1239,6 @@ window.abrirCalculadoraComProduto = function(id){
   document.getElementById('calc-img-url').value=p.img||'';
   if(p.precoVenda) document.getElementById('calc-preco').value=p.precoVenda.toFixed(2);
 
-  // Carregar receita de filamentos na calculadora
   const calcReceitaContainer=document.getElementById('calc-receita-list');
   calcReceitaContainer.innerHTML='';
   document.getElementById('calc-receita-empty').style.display='block';
@@ -1250,7 +1247,6 @@ window.abrirCalculadoraComProduto = function(id){
   if(receita.length>0){
     receita.forEach(r=>calcAdicionarReceitaRow(r.filId||'',r.gramas));
   } else if(cd.peso>0){
-    // receita legado sem filId — apenas cria linha vazia com gramas
     calcAdicionarReceitaRow('',cd.peso);
   }
 
@@ -1375,11 +1371,9 @@ window.iniciarDeducaoFilamento = function(pedidoId, pedido, statusNovo){
     if(!window._filamentos.length){
       filsHtml='<div style="padding:12px;color:var(--muted);font-size:13px">Nenhum filamento cadastrado</div>';
     } else {
-      // Tenta pré-selecionar o filamento cadastrado na receita
       const filPadrao=window._filamentos.find(f=>f._id===item.filId);
       let preSelectedId=filPadrao?filPadrao._id:'';
       if(!preSelectedId){
-        // Fallback: primeiro com estoque suficiente
         const suf=window._filamentos.find(f=>{const q=f.unidade==='kg'?f.qtd*1000:f.qtd;return q>=item.gramas;});
         if(suf) preSelectedId=suf._id;
         else if(window._filamentos.length>0) preSelectedId=window._filamentos[0]._id;
@@ -1413,7 +1407,6 @@ window.iniciarDeducaoFilamento = function(pedidoId, pedido, statusNovo){
 
     container.appendChild(grupo);
 
-    // Definir o hidden value com o pré-selecionado
     const firstSel=grupo.querySelector('.fil-select-item.selected');
     if(firstSel) document.getElementById(hiddenId).value=firstSel.dataset.filId;
   });
@@ -1460,11 +1453,9 @@ window.pularDeducao = async function(){
 window.fecharModalDeducao = function(){document.getElementById('modal-deducao-fil').classList.remove('open');_deducaoCtx=null;};
 
 // ── CICLAR STATUS ─────────────────────────────────────
-// CORREÇÃO PRINCIPAL: ao concluir, deduz do estoque de PRODUTOS (un.)
 window.ciclarStatus = async(id, statusAtual)=>{
   const novo=nextStatus(statusAtual);
 
-  // Aguardando → Em Produção: deduzir filamento
   if(novo==='producao'){
     const pedido=window._pedidos.find(x=>x._id===id);
     if(pedido?.produtoId){
@@ -1479,7 +1470,6 @@ window.ciclarStatus = async(id, statusAtual)=>{
     return;
   }
 
-  // Em Produção → Concluído: deduz estoque do PRODUTO (unidades vendidas/entregues)
   if(novo==='concluido'){
     const pedido=window._pedidos.find(x=>x._id===id);
     if(pedido?.produtoId && pedido?.qtdPedida){
@@ -1515,7 +1505,6 @@ window.ciclarStatus = async(id, statusAtual)=>{
     return;
   }
 
-  // Concluído → Aguardando (reabrir pedido): devolve ao estoque
   if(novo==='aguardando' && statusAtual==='concluido'){
     const pedido=window._pedidos.find(x=>x._id===id);
     if(pedido?.produtoId && pedido?.qtdPedida){
@@ -1537,7 +1526,6 @@ window.ciclarStatus = async(id, statusAtual)=>{
     return;
   }
 
-  // Outros casos simples
   try{
     await updateDoc(doc(db,'pedidos',id),{status:novo});
     toast(`Status → ${statusInfo[novo].label}`);
@@ -1783,6 +1771,13 @@ function atualizarDashboard(){
   const hoje=new Date().toISOString().split('T')[0];
   const pedsHoje=peds.filter(p=>p.status==='concluido'&&(p.concluidoEm||'').startsWith(hoje)).length;
 
+  // KPI: valor estimado dos pedidos abertos
+  let valorAbertos = 0;
+  peds.filter(p=>p.status!=='concluido').forEach(p=>{
+    const prod = prods.find(x=>x._id===p.produtoId);
+    if(prod?.precoVenda) valorAbertos += prod.precoVenda * (p.qtdPedida||1);
+  });
+
   document.getElementById('kpi-fil-total').textContent=filTotal;
   document.getElementById('kpi-fil-sub').textContent=filEsg>0?`${filEsg} esgotado(s)`:'todos com estoque';
   document.getElementById('kpi-prod-total').textContent=prodTotal;
@@ -1790,7 +1785,13 @@ function atualizarDashboard(){
   document.getElementById('kpi-alertas').textContent=totalAlertas;
   document.getElementById('kpi-esgotados').textContent=totalEsg;
   document.getElementById('kpi-ped-abertos').textContent=pedsAbertos;
-  document.getElementById('kpi-ped-sub').textContent=pedsHoje>0?`${pedsHoje} concluído(s) hoje`:`${peds.filter(p=>p.status==='concluido').length} concluído(s) total`;
+
+  // Sub do KPI de pedidos: mostra valor estimado se houver, senão qtd concluídos
+  if(valorAbertos > 0){
+    document.getElementById('kpi-ped-sub').textContent=`≈ ${fmt(valorAbertos)} em aberto`;
+  } else {
+    document.getElementById('kpi-ped-sub').textContent=pedsHoje>0?`${pedsHoje} concluído(s) hoje`:`${peds.filter(p=>p.status==='concluido').length} concluído(s) total`;
+  }
 
   const badge=document.getElementById('badge-pedidos-pendentes');
   if(pedsAbertos>0){badge.textContent=pedsAbertos;badge.style.display='inline-flex';}else badge.style.display='none';
@@ -1806,24 +1807,86 @@ function atualizarDashboard(){
     alertDiv.innerHTML=html;
   }
 
+  // ── BARRAS DE CONSUMO DE FILAMENTOS (CORRIGIDO) ──────────────────────────
+  // consumoMap: apenas saídas de PRODUÇÃO (motivo contém "Produção")
+  // Isso garante que só mostra consumo real gerado por pedidos, não ajustes manuais de cadastro
   const barsDiv=document.getElementById('dash-fil-bars');
-  if(!fils.length){barsDiv.innerHTML='<div class="alert-empty">Nenhum filamento</div>';}
-  else{
-    const maxQtdG=Math.max(...fils.map(f=>f.unidade==='kg'?f.qtd*1000:f.qtd),1);
+  if(!fils.length){
+    barsDiv.innerHTML='<div class="alert-empty">Nenhum filamento cadastrado</div>';
+  } else {
+    // Mapa de consumo: somente movimentos tipo 'saida' da coleção filamentos
+    // gerados por produção (quando um pedido vai para Em Produção)
     const consumoMap={};
-    window._movimentos.filter(m=>m.colecao==='filamentos'&&m.tipo==='saida').forEach(m=>{consumoMap[m.itemId]=(consumoMap[m.itemId]||0)+m.quantidade;});
-    barsDiv.innerHTML=fils.slice(0,7).map(f=>{
-      const qG=f.unidade==='kg'?f.qtd*1000:f.qtd;
-      const pct=Math.min(100,Math.round(qG/maxQtdG*100));
-      const consumoG=consumoMap[f._id]||0;
-      const consumoDisplay=f.unidade==='kg'?`${(consumoG/1000).toFixed(2)}kg`:`${consumoG}g`;
-      return `<div class="fil-bar-item">
-        <div class="fil-bar-label"><span class="name">${f.cor} <small style="color:var(--muted)">${f.marca}</small></span><span class="qty">${f.qtd}${f.unidade||'g'}</span></div>
-        <div class="fil-bar-track"><div class="fil-bar-fill${qG<200?' low':''}" style="width:${pct}%"></div></div>
-        <div class="fil-bar-meta"><span>Disponível: ${pct}%</span>${consumoG>0?`<span class="consumed">Consumido: ${consumoDisplay}</span>`:''}</div>
+    window._movimentos
+      .filter(m => m.colecao==='filamentos' && m.tipo==='saida')
+      .forEach(m => {
+        consumoMap[m.itemId] = (consumoMap[m.itemId]||0) + (m.quantidade||0);
+      });
+
+    // Ordenar: esgotados primeiro, depois críticos, depois por quantidade crescente
+    const filsOrdenados = [...fils].sort((a,b)=>{
+      const aEsg = a.qtd<=0, bEsg = b.qtd<=0;
+      const aLow = !aEsg && (a.unidade==='kg'?a.qtd*1000:a.qtd)<200;
+      const bLow = !bEsg && (b.unidade==='kg'?b.qtd*1000:b.qtd)<200;
+      if(aEsg && !bEsg) return -1;
+      if(!aEsg && bEsg) return 1;
+      if(aLow && !bLow) return -1;
+      if(!aLow && bLow) return 1;
+      return 0;
+    });
+
+    barsDiv.innerHTML = filsOrdenados.slice(0,8).map(f=>{
+      const qG = f.unidade==='kg' ? f.qtd*1000 : f.qtd;
+      // consumo real: total de gramas saídas por produção para este filamento
+      const consumoG = consumoMap[f._id] || 0;
+
+      // Porcentagem: baseada no estoque original estimado (atual + saídas de produção)
+      // Isso mostra quanto do filamento que JÁ PASSOU pelo estoque ainda está disponível
+      const estoqueOriginalG = qG + consumoG;
+      const pct = estoqueOriginalG > 0
+        ? Math.min(100, Math.round((qG / estoqueOriginalG) * 100))
+        : 0;
+
+      const esgotado = qG <= 0;
+      const critico = !esgotado && qG < 200;
+
+      // Formatar exibição de quantidade atual
+      const qtdDisplay = f.unidade==='kg'
+        ? `${f.qtd}kg`
+        : f.qtd >= 1000
+          ? `${(f.qtd/1000).toFixed(2)}kg`
+          : `${f.qtd}g`;
+
+      // Formatar consumo (só exibe se houver consumo real > 0)
+      let consumoHtml = '';
+      if(consumoG > 0.001){
+        const consumoDisplay = consumoG >= 1000
+          ? `${(consumoG/1000).toFixed(3)}kg`
+          : `${consumoG.toFixed(1)}g`;
+        consumoHtml = `<span class="consumed">▼ Consumido: ${consumoDisplay}</span>`;
+      }
+
+      // Tooltip com preço/kg se disponível
+      const precoTitle = f.precoKg ? ` | R$${Number(f.precoKg).toFixed(2)}/kg` : '';
+      const barClass = esgotado ? 'esgotado' : critico ? 'low' : '';
+
+      return `<div class="fil-bar-item" title="${f.cor} (${f.marca})${precoTitle}">
+        <div class="fil-bar-label">
+          <span class="name">${f.cor} <small style="color:var(--muted)">${f.marca}</small>${esgotado?'<span style="margin-left:6px;font-size:10px;color:var(--red);font-family:var(--font-mono)">ESGOTADO</span>':critico?'<span style="margin-left:6px;font-size:10px;color:var(--amber);font-family:var(--font-mono)">CRÍTICO</span>':''}</span>
+          <span class="qty">${qtdDisplay}</span>
+        </div>
+        <div class="fil-bar-track">
+          <div class="fil-bar-fill${barClass?' '+barClass:''}" style="width:${pct}%"></div>
+        </div>
+        <div class="fil-bar-meta">
+          <span>${esgotado ? '⚠️ Repor estoque' : `Disponível: ${pct}%${consumoG > 0.001 ? ' do estoque inicial' : ''}`}</span>
+          ${consumoHtml}
+        </div>
+        ${f.precoKg ? `<div class="fil-bar-preco">💰 R$${Number(f.precoKg).toFixed(2)}/kg</div>` : ''}
       </div>`;
     }).join('');
   }
+  // ── FIM DAS BARRAS ────────────────────────────────────────────────────────
 
   const critDiv=document.getElementById('dash-prod-criticos');
   const criticos=prods.filter(p=>p.qtd<=2).slice(0,4);
@@ -2000,7 +2063,6 @@ document.getElementById('form-pedido').addEventListener('submit', async function
 // ── CALCULADORA ──────────────────────────────────────
 function calcBase(){
   const vn=id=>Number(document.getElementById(id).value)||0;
-  // Custo de material agora vem da receita de filamentos
   const material=calcCustoMaterial();
   const energiaKwh=(vn('calc-potencia')*vn('calc-tempo'))/1000;
   const energia=energiaKwh*vn('calc-energia');
@@ -2110,7 +2172,6 @@ window.resetarCalc = function(){
   document.getElementById('calc-chart-card').style.display='none';
   document.getElementById('calc-margem-card').style.display='none';
   document.getElementById('calc-editing-notice').style.display='none';
-  // Reset receita
   document.getElementById('calc-receita-list').innerHTML='';
   document.getElementById('calc-receita-empty').style.display='block';
   document.getElementById('calc-receita-total-box').style.display='none';
@@ -2162,11 +2223,6 @@ window.salvarCalculadoraNoFirebase = async function(){
 
   try{
     if(window._calcEditingProdId){
-      // Ao editar, preservar receita customizada se já foi modificada manualmente
-      const prodAtual=window._produtos.find(p=>p._id===window._calcEditingProdId);
-      const temReceitaCustom=prodAtual?.receita&&prodAtual.receita.length>0&&
-        JSON.stringify(prodAtual.receita)!==JSON.stringify(receita);
-      // Se a receita da calc é diferente da salva, usa a da calc (mais atualizada)
       await updateDoc(doc(db,'produtos',window._calcEditingProdId),payload);
       toast('✅ Precificação atualizada no estoque!');
     } else {

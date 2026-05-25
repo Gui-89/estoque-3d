@@ -90,6 +90,11 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
 .alert-item.warning{background:var(--amber-dim);border-color:rgba(245,158,11,0.2);color:#fcd34d}
 .alert-item.ok{background:var(--neon-dim);border-color:var(--neon-border);color:var(--neon)}
 .alert-empty{color:var(--muted);font-size:13px;text-align:center;padding:16px}
+
+/* BARRA FILTRO FILAMENTOS DASHBOARD */
+.dash-fil-search{width:100%;background:var(--bg3);border:1px solid var(--glass-border);border-radius:8px;padding:8px 12px;color:var(--text);font-family:var(--font-ui);font-size:13px;margin-bottom:14px;transition:.2s}
+.dash-fil-search:focus{outline:none;border-color:var(--neon-border)}
+
 .fil-bar-wrap{display:flex;flex-direction:column;gap:14px}
 .fil-bar-item{}
 .fil-bar-label{display:flex;justify-content:space-between;font-size:13px;margin-bottom:5px}
@@ -239,6 +244,11 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
 .pedido-consumo .consumo-item{display:flex;align-items:center;gap:4px;color:var(--muted)}
 .pedido-consumo .consumo-item strong{color:var(--text)}
 .pedido-consumo .consumo-divider{color:var(--glass-border)}
+/* LUCRO ESTIMADO NO PEDIDO */
+.pedido-lucro{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:100px;font-size:11px;font-weight:600;font-family:var(--font-mono);margin-left:6px}
+.pedido-lucro.bom{background:rgba(0,255,163,0.12);color:var(--neon);border:1px solid var(--neon-border)}
+.pedido-lucro.medio{background:var(--amber-dim);color:var(--amber);border:1px solid rgba(245,158,11,0.3)}
+.pedido-lucro.ruim{background:var(--red-dim);color:var(--red);border:1px solid rgba(239,68,68,0.25)}
 .consumo-preview{background:var(--bg3);border:1px solid var(--neon-border);border-radius:8px;padding:10px 14px;margin-top:8px;font-size:13px;display:none}
 .consumo-preview.visible{display:block}
 .consumo-preview .cp-row{display:flex;justify-content:space-between;margin-bottom:4px;color:var(--muted)}
@@ -329,7 +339,7 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
 .calc-margem-table .price-td{font-weight:600}
 .calc-pct-good{color:var(--neon)}.calc-pct-warn{color:var(--amber)}.calc-pct-bad{color:var(--red)}
 
-/* ── CALC RECEITA (filamentos com preço) ── */
+/* CALC RECEITA */
 .calc-receita-header{display:grid;grid-template-columns:1fr 80px 80px 60px 28px;gap:6px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;padding:0 0 4px 0;border-bottom:1px solid var(--glass-border);margin-bottom:6px}
 .calc-receita-row{display:grid;grid-template-columns:1fr 80px 80px 60px 28px;gap:6px;align-items:center;margin-bottom:6px;animation:fadeIn .2s ease}
 .calc-receita-row select{background:var(--bg3);border:1px solid var(--glass-border);border-radius:6px;padding:8px 10px;color:var(--text);font-size:13px;font-family:var(--font-ui);transition:.2s;appearance:none}
@@ -358,6 +368,7 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
 .pagamento-parcial{background:var(--amber-dim);color:var(--amber);border:1px solid rgba(245,158,11,0.3)}
 .pagamento-pendente{background:var(--red-dim);color:var(--red);border:1px solid rgba(239,68,68,0.25)}
 .pagamento-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+
 /* FILTRO PERÍODO */
 .periodo-filter-row{display:flex;gap:8px;align-items:center;margin-bottom:16px;flex-wrap:wrap}
 .periodo-filter-row label{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;white-space:nowrap}
@@ -365,6 +376,7 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
 .periodo-filter-row input[type=month]:focus{outline:none;border-color:var(--neon-border)}
 .periodo-clear-btn{padding:7px 14px;border-radius:8px;border:1px solid var(--glass-border);background:transparent;color:var(--muted);font-size:12px;font-family:var(--font-ui);cursor:pointer;transition:.2s}
 .periodo-clear-btn:hover{color:var(--text);background:var(--glass)}
+
 /* CHART FATURAMENTO */
 .dash-chart-panel{background:var(--bg2);border:1px solid var(--glass-border);border-radius:var(--r-lg);padding:20px;margin-bottom:24px}
 .dash-chart-panel h4{font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;gap:8px}
@@ -376,19 +388,26 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
 .chart-summary-item.green strong{color:var(--neon)}
 .chart-summary-item.amber strong{color:var(--amber)}
 .chart-summary-item.blue strong{color:var(--blue)}
+.chart-summary-item.purple strong{color:var(--purple)}
+
 /* RECALCULAR CUSTO */
 .btn-recalcular{background:rgba(59,130,246,0.08);color:var(--blue);border:1px solid rgba(59,130,246,0.3);padding:5px 10px;border-radius:6px;font-size:11px;font-family:var(--font-ui);font-weight:600;cursor:pointer;transition:.2s;white-space:nowrap}
 .btn-recalcular:hover{background:var(--blue-dim)}
 .btn-recalcular.desatualizado{background:var(--amber-dim);color:var(--amber);border-color:rgba(245,158,11,0.35)}
+
 /* MODAL PAGAMENTO */
 .pagamento-modal-row{display:flex;gap:10px;align-items:flex-end}
 .radio-group{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:4px}
 .radio-opt{display:flex;align-items:center;gap:6px;padding:7px 12px;border-radius:8px;border:1px solid var(--glass-border);background:var(--bg3);cursor:pointer;transition:.2s;font-size:13px}
 .radio-opt input[type=radio]{accent-color:var(--neon)}
 .radio-opt:has(input:checked){border-color:var(--neon-border);background:var(--neon-dim)}
+
 /* KPI EXTRA */
 .kpi-card.kpi-green .kpi-accent{background:linear-gradient(90deg,#22c55e,transparent)}
 .kpi-card.kpi-green .kpi-value{color:#22c55e}
+.kpi-card.kpi-teal .kpi-accent{background:linear-gradient(90deg,#14b8a6,transparent)}
+.kpi-card.kpi-teal .kpi-value{color:#14b8a6}
+
 @media(max-width:480px){
   .main{padding:14px 12px 60px}.topbar{padding:0 14px}.nav-tabs{padding:8px 12px}
   .kpi-grid{grid-template-columns:1fr 1fr}.item-grid{grid-template-columns:1fr}
@@ -452,8 +471,10 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
         <div class="kpi-card kpi-amber"><div class="kpi-accent"></div><div class="kpi-icon">⚠️</div><div class="kpi-label">Alertas</div><div class="kpi-value" id="kpi-alertas">—</div><div class="kpi-sub">esgotados + críticos</div></div>
         <div class="kpi-card kpi-red"><div class="kpi-accent"></div><div class="kpi-icon">🔴</div><div class="kpi-label">Esgotados</div><div class="kpi-value" id="kpi-esgotados">—</div><div class="kpi-sub">fil. + produtos</div></div>
         <div class="kpi-card kpi-green"><div class="kpi-accent"></div><div class="kpi-icon">💰</div><div class="kpi-label">Faturado (mês)</div><div class="kpi-value" id="kpi-faturado-mes">—</div><div class="kpi-sub" id="kpi-faturado-sub">pedidos concluídos</div></div>
+        <div class="kpi-card kpi-teal"><div class="kpi-accent"></div><div class="kpi-icon">📈</div><div class="kpi-label">Lucro Est. (mês)</div><div class="kpi-value" id="kpi-lucro-mes">—</div><div class="kpi-sub" id="kpi-lucro-sub">venda − custo</div></div>
         <div class="kpi-card kpi-blue"><div class="kpi-accent"></div><div class="kpi-icon">⏱️</div><div class="kpi-label">Em Prod. (semana)</div><div class="kpi-value" id="kpi-tempo-semana">—</div><div class="kpi-sub" id="kpi-tempo-semana-sub">tempo total</div></div>
       </div>
+
       <!-- GRÁFICO FATURAMENTO -->
       <div class="dash-chart-panel">
         <h4><span style="display:flex;align-items:center;gap:8px"><span style="width:3px;height:12px;background:var(--neon);border-radius:2px;display:inline-block"></span>Faturamento Mensal</span><span id="dash-chart-ano">—</span></h4>
@@ -462,11 +483,18 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
           <div class="chart-summary-item green"><span>Melhor mês</span><strong id="chart-melhor-mes">—</strong></div>
           <div class="chart-summary-item amber"><span>Média mensal</span><strong id="chart-media-mes">—</strong></div>
           <div class="chart-summary-item blue"><span>Total no ano</span><strong id="chart-total-ano">—</strong></div>
+          <div class="chart-summary-item purple"><span>Lucro est. ano</span><strong id="chart-lucro-ano">—</strong></div>
         </div>
       </div>
+
       <div class="dash-row">
         <div class="dash-panel"><h4>Alertas de Estoque</h4><div class="alert-list" id="dash-alertas"><div class="alert-empty">Carregando...</div></div></div>
-        <div class="dash-panel"><h4>Consumo de Filamentos</h4><div class="fil-bar-wrap" id="dash-fil-bars"><div class="alert-empty">Carregando...</div></div></div>
+        <div class="dash-panel">
+          <h4>Consumo de Filamentos</h4>
+          <!-- NOVO: campo de busca inline nas barras -->
+          <input class="dash-fil-search" id="dash-fil-search-input" type="text" placeholder="🔍 Filtrar filamento..." oninput="filtrarDashFil()">
+          <div class="fil-bar-wrap" id="dash-fil-bars"><div class="alert-empty">Carregando...</div></div>
+        </div>
       </div>
       <div class="dash-row">
         <div class="dash-panel"><h4>Pedidos em Andamento</h4><div id="dash-pedidos-andamento"><div class="alert-empty">Carregando...</div></div></div>
@@ -565,7 +593,6 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
             <div class="form-group"><label>Previsão de Entrega</label><input type="date" id="ped-data-entrega" required></div>
           </div>
           <div class="form-group"><label>Observações internas</label><textarea id="ped-obs" rows="2" placeholder="Endereço, pagamento..."></textarea></div>
-          <!-- PAGAMENTO -->
           <div class="form-row">
             <div class="form-group">
               <label>Status do Pagamento</label>
@@ -640,7 +667,6 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
         </div>
       </div>
 
-      <!-- RECEITA DE FILAMENTOS COM PREÇO REAL -->
       <div class="card-form">
         <h3>🎨 Filamentos Utilizados <span>/ custo real por cor</span></h3>
         <div class="info-box">Selecione cada filamento do seu estoque e informe os gramas usados por unidade. O custo é calculado automaticamente com base no <strong>preço/kg cadastrado</strong>.</div>
@@ -927,6 +953,8 @@ window._editProdId  = null;
 window._fotoCtx     = null;
 window._filtroStatus = 'todos';
 window._calcEditingProdId = null;
+// Cache das barras de filamentos para filtro inline
+window._dashFilBarsCache = [];
 let _deducaoCtx = null;
 let _calcChart  = null;
 
@@ -977,7 +1005,7 @@ function multiplicarTempo(tempoStr, qtd){
 }
 window.multiplicarTempo = multiplicarTempo;
 
-// ── RECEITA DE FILAMENTOS (Estoque + Produtos) ───────────
+// ── RECEITA DE FILAMENTOS ───────────
 function getProdutoReceita(prod){
   if(prod?.receita && prod.receita.length>0) return prod.receita;
   if(prod?.gasto>0){
@@ -1713,7 +1741,6 @@ window.removerFotoPedido = async function(){
 window.filtrarPedidos = function(status,btn){
   window._filtroStatus=status;
   document.querySelectorAll('.status-filter-btn').forEach(b=>b.className='status-filter-btn');
-  // classes de ativo por tipo
   const clsMap={todos:'active-todos',aguardando:'active-aguardando',producao:'active-producao',concluido:'active-concluido',pago:'active-concluido',pendente_pag:'active-aguardando'};
   btn.classList.add(clsMap[status]||'active-todos');
   renderPedidos();
@@ -1726,7 +1753,19 @@ window.filtrarLista = function(tipo){
   renderLista(tipo,f);
 };
 
-// ── RENDER FILAMENTOS ─────────────────────────────────
+// ── FILTRO INLINE BARRAS DASHBOARD ──────────────────────
+window.filtrarDashFil = function(){
+  const q=(document.getElementById('dash-fil-search-input')?.value||'').toLowerCase().trim();
+  const wrap=document.getElementById('dash-fil-bars');
+  if(!wrap) return;
+  const items=wrap.querySelectorAll('.fil-bar-item');
+  items.forEach(item=>{
+    const title=(item.getAttribute('title')||'').toLowerCase();
+    item.style.display=(q===''||title.includes(q))?'':'none';
+  });
+};
+
+// ── RENDER FILAMENTOS / PRODUTOS ─────────────────────
 function renderLista(tipo,dados){
   const el=document.getElementById(tipo==='filamentos'?'lista-filamentos':'lista-produtos');
   if(!dados.length){el.innerHTML=`<div class="empty-state"><div class="empty-icon">${tipo==='filamentos'?'🧵':'📦'}</div>Nenhum item encontrado.</div>`;return;}
@@ -1757,10 +1796,13 @@ function renderLista(tipo,dados){
 
       let priceHtml='';
       if(d.precoVenda||d.custoProducao){
+        // Calcula lucro estimado para exibição
+        const lucroEst=d.precoVenda&&d.custoProducao?d.precoVenda-d.custoProducao:null;
+        const margemEst=lucroEst&&d.precoVenda?(lucroEst/d.precoVenda*100):null;
         priceHtml=`<div class="item-price-info">`;
         if(d.precoVenda) priceHtml+=`<span class="price-venda">💰 Venda: <strong>${fmt(d.precoVenda)}</strong></span>`;
         if(d.custoProducao) priceHtml+=`<span class="price-custo">🏭 Custo: <strong>${fmt(d.custoProducao)}</strong></span>`;
-        if(d.margemLucro) priceHtml+=`<span class="price-margem">📈 Margem: <strong>${d.margemLucro}%</strong></span>`;
+        if(lucroEst!==null) priceHtml+=`<span class="price-margem">📈 Lucro: <strong>${fmt(lucroEst)} (${margemEst?.toFixed(0)}%)</strong></span>`;
         priceHtml+=`</div>`;
       }
 
@@ -1774,9 +1816,7 @@ function renderLista(tipo,dados){
       let btns=`<button class="btn-sm btn-edit" onclick="abrirModalEditProduto('${d._id}')">✏️ Editar</button>`;
       if(d.calcData||d.precoVenda) btns+=`<button class="btn-sm btn-calc" onclick="abrirCalculadoraComProduto('${d._id}')">🧮 Precificar</button>`;
 
-      // Botão recalcular custo: aparece se tem receita + precos de filamentos disponíveis
       if(d.receita&&d.receita.length>0){
-        // Verifica se custo está desatualizado (diferença > 1%)
         let custoAtual=0;
         let temPreco=false;
         d.receita.forEach(r=>{
@@ -1815,10 +1855,9 @@ function renderLista(tipo,dados){
 function renderPedidos(){
   const el=document.getElementById('lista-pedidos');
   const busca=document.getElementById('search-ped').value.toLowerCase();
-  const periodo=document.getElementById('filtro-periodo')?.value||''; // "YYYY-MM"
+  const periodo=document.getElementById('filtro-periodo')?.value||'';
   let dados=window._pedidos;
 
-  // Filtro por status / pagamento
   if(window._filtroStatus==='pago'){
     dados=dados.filter(p=>p.pagamentoStatus==='pago');
   } else if(window._filtroStatus==='pendente_pag'){
@@ -1827,12 +1866,10 @@ function renderPedidos(){
     dados=dados.filter(p=>p.status===window._filtroStatus);
   }
 
-  // Filtro por período (usa dataPedido)
   if(periodo){
     dados=dados.filter(p=>(p.dataPedido||'').startsWith(periodo));
   }
 
-  // Filtro por texto
   if(busca) dados=dados.filter(p=>(p.cliente||'').toLowerCase().includes(busca)||(p.produtoNome||'').toLowerCase().includes(busca)||(p.desc||'').toLowerCase().includes(busca));
 
   dados=[...dados].sort((a,b)=>{
@@ -1841,7 +1878,6 @@ function renderPedidos(){
     return (a.dataEntrega||'').localeCompare(b.dataEntrega||'');
   });
 
-  // Resumo do período
   const resumoEl=document.getElementById('periodo-resumo');
   if(resumoEl && periodo){
     const total=dados.reduce((s,p)=>{
@@ -1866,7 +1902,7 @@ function renderPedidos(){
     const prazo=p.status!=='concluido'?prazoInfo(p.dataEntrega):null;
     const qtd=p.qtdPedida||1;
 
-    // Badge de pagamento
+    // Badge pagamento
     const pagSt=p.pagamentoStatus||'pendente';
     const pagMap={pago:{cls:'pagamento-pago',icon:'✅',label:'Pago'},parcial:{cls:'pagamento-parcial',icon:'⚡',label:'Parcial'},pendente:{cls:'pagamento-pendente',icon:'💳',label:'Pendente'}};
     const pagInfo=pagMap[pagSt]||pagMap.pendente;
@@ -1885,6 +1921,16 @@ function renderPedidos(){
     const formaLabel=p.formaPagamento?` · ${formaLabels[p.formaPagamento]||p.formaPagamento}`:'';
     const pagRow=`<div class="pagamento-row"><span class="pagamento-badge ${pagInfo.cls}">${pagInfo.icon} ${pagInfo.label}${formaLabel}</span>${pagBadgeExtra}</div>`;
 
+    // ── NOVO: Lucro estimado por pedido ──────────────────
+    let lucroHtml='';
+    if(prod?.precoVenda && prod?.custoProducao){
+      const lucroUn=prod.precoVenda-prod.custoProducao;
+      const lucroTotal=lucroUn*qtd;
+      const margemPct=prod.precoVenda>0?(lucroUn/prod.precoVenda*100):0;
+      const lucroCls=margemPct>=25?'bom':margemPct>=10?'medio':'ruim';
+      lucroHtml=`<span class="pedido-lucro ${lucroCls}" title="Lucro estimado: ${fmt(lucroUn)}/un × ${qtd} un.">📈 ${fmt(lucroTotal)} (${margemPct.toFixed(0)}%)</span>`;
+    }
+
     let consumoHtml='';
     if(p.produtoId&&prod){
       const c=calcularConsumoPedido(prod,qtd);
@@ -1894,6 +1940,7 @@ function renderPedidos(){
         <div class="consumo-item">⚖️ <strong>${c.filamento.toFixed(1)}g</strong></div>
         <span class="consumo-divider">·</span>
         <div class="consumo-item">⏱️ <strong>${multiplicarTempo(prod.tempo,qtd)}</strong></div>
+        ${lucroHtml?`<span class="consumo-divider">·</span><div class="consumo-item">${lucroHtml}</div>`:''}
       </div>`;
     }
     const fotoHtml=p.fotoUrl?`<img src="${p.fotoUrl}" alt="Foto" class="pedido-photo">`:'';
@@ -1950,6 +1997,80 @@ window.filtrarHistorico = function(){
 
 // ── DASHBOARD ─────────────────────────────────────────
 let _dashFatChart = null;
+
+// Função auxiliar para renderizar as barras de filamentos no dashboard
+// ────────────────────────────────────────────────────────────────────────────
+// CORREÇÃO PRINCIPAL: Remove o .slice(0,8) e ordena por consumo
+// ────────────────────────────────────────────────────────────────────────────
+function renderDashFilBars(consumoMap){
+  const fils=window._filamentos;
+  const barsDiv=document.getElementById('dash-fil-bars');
+  if(!barsDiv) return;
+
+  if(!fils.length){
+    barsDiv.innerHTML='<div class="alert-empty">Nenhum filamento cadastrado</div>';
+    window._dashFilBarsCache=[];
+    return;
+  }
+
+  // ORDENAÇÃO CORRIGIDA: esgotado > crítico > TEM consumo (maior consumo primeiro) > sem consumo
+  const filsOrdenados = [...fils].sort((a,b)=>{
+    const aEsg=a.qtd<=0, bEsg=b.qtd<=0;
+    const aQtdG=a.unidade==='kg'?a.qtd*1000:a.qtd;
+    const bQtdG=b.unidade==='kg'?b.qtd*1000:b.qtd;
+    const aLow=!aEsg && aQtdG<200;
+    const bLow=!bEsg && bQtdG<200;
+    const aConsumo=consumoMap[a._id]||0;
+    const bConsumo=consumoMap[b._id]||0;
+
+    // Prioridade 1: esgotados primeiro
+    if(aEsg&&!bEsg) return -1;
+    if(!aEsg&&bEsg) return 1;
+    // Prioridade 2: críticos (< 200g) primeiro
+    if(aLow&&!bLow) return -1;
+    if(!aLow&&bLow) return 1;
+    // Prioridade 3: filamentos COM consumo registrado primeiro
+    if(aConsumo>0&&bConsumo<=0) return -1;
+    if(aConsumo<=0&&bConsumo>0) return 1;
+    // Prioridade 4: dentro dos que têm consumo, maior consumo primeiro
+    if(aConsumo>0&&bConsumo>0) return bConsumo-aConsumo;
+    return 0;
+  });
+
+  // TODOS os filamentos são mostrados (sem .slice(0,8))
+  const htmlItems = filsOrdenados.map(f=>{
+    const qG=f.unidade==='kg'?f.qtd*1000:f.qtd;
+    const consumoG=consumoMap[f._id]||0;
+    const estoqueOriginalG=qG+consumoG;
+    const pct=estoqueOriginalG>0?Math.min(100,Math.round((qG/estoqueOriginalG)*100)):0;
+    const esgotado=qG<=0, critico=!esgotado&&qG<200;
+    const temConsumo=consumoG>0.001;
+    const qtdDisplay=f.unidade==='kg'?`${f.qtd}kg`:f.qtd>=1000?`${(f.qtd/1000).toFixed(2)}kg`:`${f.qtd}g`;
+    let consumoHtml='';
+    if(temConsumo){
+      const consumoDisplay=consumoG>=1000?`${(consumoG/1000).toFixed(3)}kg`:`${consumoG.toFixed(1)}g`;
+      consumoHtml=`<span class="consumed">▼ ${consumoDisplay} consumido</span>`;
+    }
+    const barClass=esgotado?'esgotado':critico?'low':'';
+    const titleAttr=`${f.cor} (${f.marca})${f.precoKg?' | R$'+Number(f.precoKg).toFixed(2)+'/kg':''}`;
+    return `<div class="fil-bar-item" title="${titleAttr}">
+      <div class="fil-bar-label">
+        <span class="name">${f.cor} <small style="color:var(--muted)">${f.marca}</small>${esgotado?'<span style="margin-left:6px;font-size:10px;color:var(--red);font-family:var(--font-mono)">ESGOTADO</span>':critico?'<span style="margin-left:6px;font-size:10px;color:var(--amber);font-family:var(--font-mono)">CRÍTICO</span>':temConsumo?'<span style="margin-left:6px;font-size:10px;color:var(--blue);font-family:var(--font-mono)">EM USO</span>':''}</span>
+        <span class="qty">${qtdDisplay}</span>
+      </div>
+      <div class="fil-bar-track"><div class="fil-bar-fill${barClass?' '+barClass:''}" style="width:${esgotado?100:pct}%"></div></div>
+      <div class="fil-bar-meta">
+        <span>${esgotado?'⚠️ Repor estoque':temConsumo?`${pct}% disponível do estoque inicial`:`Disponível: ${pct}%`}</span>
+        ${consumoHtml}
+      </div>
+      ${f.precoKg?`<div class="fil-bar-preco">💰 R$${Number(f.precoKg).toFixed(2)}/kg</div>`:''}
+    </div>`;
+  });
+
+  barsDiv.innerHTML = htmlItems.join('');
+  window._dashFilBarsCache = htmlItems;
+}
+
 function atualizarDashboard(){
   const fils=window._filamentos,prods=window._produtos,peds=window._pedidos;
   const filTotal=fils.length,filEsg=fils.filter(f=>f.qtd<=0).length;
@@ -1961,16 +2082,14 @@ function atualizarDashboard(){
   const pedsAbertos=peds.filter(p=>p.status!=='concluido').length;
   const hoje=new Date().toISOString().split('T')[0];
   const anoAtual=new Date().getFullYear();
-  const mesAtual=new Date().getMonth(); // 0-indexed
+  const mesAtual=new Date().getMonth();
 
-  // KPI: valor estimado dos pedidos abertos
   let valorAbertos = 0;
   peds.filter(p=>p.status!=='concluido').forEach(p=>{
     const prod = prods.find(x=>x._id===p.produtoId);
     if(prod?.precoVenda) valorAbertos += prod.precoVenda * (p.qtdPedida||1);
   });
 
-  // KPI: faturamento do mês atual (pedidos CONCLUÍDOS com precoVenda)
   const pedsConcluidosMes = peds.filter(p=>{
     if(p.status!=='concluido') return false;
     const dataRef = p.concluidoEm || p.dataPedido || '';
@@ -1980,19 +2099,18 @@ function atualizarDashboard(){
     const prod = prods.find(x=>x._id===p.produtoId);
     return s + (prod?.precoVenda||0)*(p.qtdPedida||1);
   },0);
+
+  // ── NOVO: Lucro estimado do mês ──────────────────────
+  const lucroMes = pedsConcluidosMes.reduce((s,p)=>{
+    const prod = prods.find(x=>x._id===p.produtoId);
+    if(!prod?.precoVenda || !prod?.custoProducao) return s;
+    return s + (prod.precoVenda - prod.custoProducao)*(p.qtdPedida||1);
+  },0);
+
   const pedsHoje=peds.filter(p=>p.status==='concluido'&&(p.concluidoEm||'').startsWith(hoje)).length;
 
-  // KPI: tempo total em produção esta semana
-  const agora = new Date();
-  const diaSemana = agora.getDay(); // 0=dom
-  const inicioSemana = new Date(agora);
-  inicioSemana.setDate(agora.getDate() - diaSemana);
-  inicioSemana.setHours(0,0,0,0);
-  const pedsProducaoSemana = peds.filter(p=>{
-    if(p.status!=='producao'&&p.status!=='aguardando') return false;
-    const dataP = new Date((p.dataPedido||'')+'T00:00:00');
-    return true; // conta todos em aberto para o planejamento da semana
-  });
+  // KPI tempo semana
+  const pedsProducaoSemana = peds.filter(p=>p.status==='producao'||p.status==='aguardando');
   let minutosTotaisSemana = 0;
   pedsProducaoSemana.forEach(p=>{
     const prod = prods.find(x=>x._id===p.produtoId);
@@ -2014,7 +2132,6 @@ function atualizarDashboard(){
   document.getElementById('kpi-ped-abertos').textContent=pedsAbertos;
   document.getElementById('kpi-ped-sub').textContent=valorAbertos>0?`≈ ${fmt(valorAbertos)} em aberto`:(pedsHoje>0?`${pedsHoje} concluído(s) hoje`:`${peds.filter(p=>p.status==='concluido').length} concluído(s) total`);
 
-  // KPI faturamento mês
   const kpiFat=document.getElementById('kpi-faturado-mes');
   const kpiFatSub=document.getElementById('kpi-faturado-sub');
   if(kpiFat){
@@ -2027,7 +2144,19 @@ function atualizarDashboard(){
     }
   }
 
-  // KPI tempo semana
+  // ── NOVO: KPI Lucro do mês ───────────────────────────
+  const kpiLucro=document.getElementById('kpi-lucro-mes');
+  const kpiLucroSub=document.getElementById('kpi-lucro-sub');
+  if(kpiLucro){
+    if(lucroMes>0){
+      kpiLucro.textContent=lucroMes>=1000?`${(lucroMes/1000).toFixed(1)}k`:lucroMes.toFixed(0);
+      kpiLucroSub.textContent=faturadoMes>0?`${(lucroMes/faturadoMes*100).toFixed(0)}% de margem`:'venda − custo';
+    } else {
+      kpiLucro.textContent='—';
+      kpiLucroSub.textContent='sem dados de custo';
+    }
+  }
+
   const kpiTempo=document.getElementById('kpi-tempo-semana');
   const kpiTempoSub=document.getElementById('kpi-tempo-semana-sub');
   if(kpiTempo){
@@ -2041,18 +2170,23 @@ function atualizarDashboard(){
   // ── GRÁFICO FATURAMENTO MENSAL ──────────────────────────
   const mesesLabels=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
   const fatPorMes=new Array(12).fill(0);
-  const receitoPorMes=new Array(12).fill(0); // valor pago real
+  const receitoPorMes=new Array(12).fill(0);
+  const lucroPorMes=new Array(12).fill(0);
   peds.filter(p=>p.status==='concluido').forEach(p=>{
     const dataRef=p.concluidoEm||p.dataPedido||'';
     const ano=parseInt(dataRef.substring(0,4));
     const mes=parseInt(dataRef.substring(5,7))-1;
     if(ano===anoAtual&&mes>=0&&mes<=11){
       const prod=prods.find(x=>x._id===p.produtoId);
-      fatPorMes[mes]+=(prod?.precoVenda||0)*(p.qtdPedida||1);
+      const venda=(prod?.precoVenda||0)*(p.qtdPedida||1);
+      const custo=(prod?.custoProducao||0)*(p.qtdPedida||1);
+      fatPorMes[mes]+=venda;
       receitoPorMes[mes]+=(p.valorPago||0);
+      lucroPorMes[mes]+=(venda>0&&custo>0)?venda-custo:0;
     }
   });
   const totalAno=fatPorMes.reduce((s,v)=>s+v,0);
+  const totalLucroAno=lucroPorMes.reduce((s,v)=>s+v,0);
   const mesesComDados=fatPorMes.filter(v=>v>0);
   const mediaAno=mesesComDados.length>0?totalAno/mesesComDados.length:0;
   const melhorMesIdx=fatPorMes.indexOf(Math.max(...fatPorMes));
@@ -2063,9 +2197,11 @@ function atualizarDashboard(){
   const melhorEl=document.getElementById('chart-melhor-mes');
   const mediaEl=document.getElementById('chart-media-mes');
   const totalEl=document.getElementById('chart-total-ano');
+  const lucroAnoEl=document.getElementById('chart-lucro-ano');
   if(melhorEl) melhorEl.textContent=melhorMesLabel;
   if(mediaEl) mediaEl.textContent=totalAno>0?fmt(mediaAno):'—';
   if(totalEl) totalEl.textContent=totalAno>0?fmt(totalAno):'R$ 0';
+  if(lucroAnoEl) lucroAnoEl.textContent=totalLucroAno>0?fmt(totalLucroAno):'—';
 
   const chartCanvas=document.getElementById('dash-faturamento-chart');
   if(chartCanvas){
@@ -2076,7 +2212,8 @@ function atualizarDashboard(){
         labels:mesesLabels,
         datasets:[
           {label:'Faturado (R$)',data:fatPorMes,backgroundColor:fatPorMes.map((_,i)=>i===mesAtual?'rgba(0,255,163,0.7)':'rgba(0,255,163,0.25)'),borderColor:fatPorMes.map((_,i)=>i===mesAtual?'#00ffa3':'rgba(0,255,163,0.4)'),borderWidth:1,borderRadius:4},
-          {label:'Recebido (R$)',data:receitoPorMes,backgroundColor:'rgba(59,130,246,0.35)',borderColor:'rgba(59,130,246,0.6)',borderWidth:1,borderRadius:4}
+          {label:'Recebido (R$)',data:receitoPorMes,backgroundColor:'rgba(59,130,246,0.35)',borderColor:'rgba(59,130,246,0.6)',borderWidth:1,borderRadius:4},
+          {label:'Lucro Est. (R$)',data:lucroPorMes,backgroundColor:'rgba(20,184,166,0.3)',borderColor:'rgba(20,184,166,0.6)',borderWidth:1,borderRadius:4}
         ]
       },
       options:{
@@ -2089,8 +2226,8 @@ function atualizarDashboard(){
       }
     });
   }
-  // ── FIM GRÁFICO ─────────────────────────────────────────
 
+  // Alertas
   const alertDiv=document.getElementById('dash-alertas');
   if(totalAlertas===0){alertDiv.innerHTML='<div class="alert-item ok">✓ Nenhum alerta de estoque</div>';}
   else{
@@ -2102,50 +2239,15 @@ function atualizarDashboard(){
     alertDiv.innerHTML=html;
   }
 
-  // ── BARRAS DE CONSUMO DE FILAMENTOS ──────────────────────────────────────
-  const barsDiv=document.getElementById('dash-fil-bars');
-  if(!fils.length){
-    barsDiv.innerHTML='<div class="alert-empty">Nenhum filamento cadastrado</div>';
-  } else {
-    const consumoMap={};
-    window._movimentos
-      .filter(m => m.colecao==='filamentos' && m.tipo==='saida')
-      .forEach(m => { consumoMap[m.itemId] = (consumoMap[m.itemId]||0) + (m.quantidade||0); });
+  // ── BARRAS DE CONSUMO — chama função separada com ordenaçao corrigida ──
+  const consumoMap={};
+  window._movimentos
+    .filter(m => m.colecao==='filamentos' && m.tipo==='saida')
+    .forEach(m => { consumoMap[m.itemId] = (consumoMap[m.itemId]||0) + (m.quantidade||0); });
 
-    const filsOrdenados = [...fils].sort((a,b)=>{
-      const aEsg=a.qtd<=0,bEsg=b.qtd<=0;
-      const aLow=!aEsg&&(a.unidade==='kg'?a.qtd*1000:a.qtd)<200;
-      const bLow=!bEsg&&(b.unidade==='kg'?b.qtd*1000:b.qtd)<200;
-      if(aEsg&&!bEsg) return -1; if(!aEsg&&bEsg) return 1;
-      if(aLow&&!bLow) return -1; if(!aLow&&bLow) return 1;
-      return 0;
-    });
+  renderDashFilBars(consumoMap);
 
-    barsDiv.innerHTML = filsOrdenados.slice(0,8).map(f=>{
-      const qG=f.unidade==='kg'?f.qtd*1000:f.qtd;
-      const consumoG=consumoMap[f._id]||0;
-      const estoqueOriginalG=qG+consumoG;
-      const pct=estoqueOriginalG>0?Math.min(100,Math.round((qG/estoqueOriginalG)*100)):0;
-      const esgotado=qG<=0, critico=!esgotado&&qG<200;
-      const qtdDisplay=f.unidade==='kg'?`${f.qtd}kg`:f.qtd>=1000?`${(f.qtd/1000).toFixed(2)}kg`:`${f.qtd}g`;
-      let consumoHtml='';
-      if(consumoG>0.001){
-        const consumoDisplay=consumoG>=1000?`${(consumoG/1000).toFixed(3)}kg`:`${consumoG.toFixed(1)}g`;
-        consumoHtml=`<span class="consumed">▼ Consumido: ${consumoDisplay}</span>`;
-      }
-      const barClass=esgotado?'esgotado':critico?'low':'';
-      return `<div class="fil-bar-item" title="${f.cor} (${f.marca})${f.precoKg?' | R$'+Number(f.precoKg).toFixed(2)+'/kg':''}">
-        <div class="fil-bar-label">
-          <span class="name">${f.cor} <small style="color:var(--muted)">${f.marca}</small>${esgotado?'<span style="margin-left:6px;font-size:10px;color:var(--red);font-family:var(--font-mono)">ESGOTADO</span>':critico?'<span style="margin-left:6px;font-size:10px;color:var(--amber);font-family:var(--font-mono)">CRÍTICO</span>':''}</span>
-          <span class="qty">${qtdDisplay}</span>
-        </div>
-        <div class="fil-bar-track"><div class="fil-bar-fill${barClass?' '+barClass:''}" style="width:${pct}%"></div></div>
-        <div class="fil-bar-meta"><span>${esgotado?'⚠️ Repor estoque':`Disponível: ${pct}%${consumoG>0.001?' do estoque inicial':''}`}</span>${consumoHtml}</div>
-        ${f.precoKg?`<div class="fil-bar-preco">💰 R$${Number(f.precoKg).toFixed(2)}/kg</div>`:''}
-      </div>`;
-    }).join('');
-  }
-
+  // Produtos críticos
   const critDiv=document.getElementById('dash-prod-criticos');
   const criticos=prods.filter(p=>p.qtd<=2).slice(0,4);
   if(!criticos.length){critDiv.innerHTML='<div class="alert-empty">Nenhum produto crítico</div>';}
@@ -2158,11 +2260,13 @@ function atualizarDashboard(){
     });
   }
 
+  // Pedidos em andamento
   const andDiv=document.getElementById('dash-pedidos-andamento');
   const emAnd=peds.filter(p=>p.status==='producao'||p.status==='aguardando').slice(0,5);
   if(!emAnd.length){andDiv.innerHTML='<div class="alert-empty">Nenhum pedido em andamento</div>';}
   else{andDiv.innerHTML=emAnd.map(p=>{const si=statusInfo[p.status||'aguardando'];return `<div class="pedido-mini"><span class="status-dot dot-${p.status||'aguardando'}"></span><div class="pedido-mini-info"><div class="pedido-mini-name">${p.cliente}${p.produtoNome?` — ${p.produtoNome}`:''}</div><div class="pedido-mini-date">Entrega: ${formatDate(p.dataEntrega)}</div></div><span class="badge ${si.cls}">${si.label}</span></div>`;}).join('');}
 
+  // Próximas entregas
   const entDiv=document.getElementById('dash-proximas-entregas');
   const proximas=peds.filter(p=>p.status!=='concluido'&&p.dataEntrega).sort((a,b)=>a.dataEntrega.localeCompare(b.dataEntrega)).slice(0,5);
   if(!proximas.length){entDiv.innerHTML='<div class="alert-empty">Nenhuma entrega prevista</div>';}
@@ -2440,7 +2544,7 @@ window.resetarCalc = function(){
   if(_calcChart){_calcChart.destroy();_calcChart=null;}
 };
 
-// ── RECALCULAR CUSTO DO PRODUTO COM PREÇOS ATUAIS ──────
+// ── RECALCULAR CUSTO ──────────────────────────────────
 window.recalcularCustoProduto = async function(id){
   const prod = window._produtos.find(x=>x._id===id);
   if(!prod) return;
@@ -2476,7 +2580,7 @@ window.recalcularCustoProduto = async function(id){
   }catch(e){ toast('Erro: '+e.message,'err'); }
 };
 
-// SALVAR CALCULADORA NO FIREBASE
+// ── SALVAR CALCULADORA NO FIREBASE ────────────────────
 window.salvarCalculadoraNoFirebase = async function(){
   const nome=document.getElementById('calc-nome').value.trim();
   if(!nome){toast('Informe o nome do produto na calculadora','err');return;}

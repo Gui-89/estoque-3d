@@ -1,21 +1,22 @@
-/* ═══════════════════════════════════════════════════
+/* ═══════════════════════════════════════════════════════════
    PRINT SCOUT — app.js
-   Auth compartilhada com GLM Studio
-   Banco Firestore próprio (printscout-817ce)
-   ═══════════════════════════════════════════════════ */
+   IA: Google Gemini 1.5 Flash (GRATUITO)
+   Fluxo: Busca por nicho → Selecionar produto → Análise profunda
+   ═══════════════════════════════════════════════════════════ */
 
-// ── ESTADO GLOBAL ────────────────────────────────────
-let currentUser   = null;
+// ── ESTADO GLOBAL ─────────────────────────────────────────────
+let currentUser    = null;
 let produtosSalvos = [];
-let currentResult = null;
-let sortKey       = 'data';
+let sortKey        = 'data';
+let nichoSelecionado = '';
+let plataformaSelecionada = 'Todas';
+let volumeMinimo = 0;
+let produtoParaAnalise = null; // produto em análise profunda
 
-// ── INIT ─────────────────────────────────────────────
+// ── INIT ──────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
-  // Inicializa data de hoje nos campos
   setupEventListeners();
 
-  // Escuta autenticação do app nomeado "printscout"
   psAuth.onAuthStateChanged(user => {
     if (user) {
       if (EMAILS_PERMITIDOS.includes(user.email)) {
@@ -34,441 +35,648 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 });
 
-// ── AUTH ─────────────────────────────────────────────
+// ── AUTH ──────────────────────────────────────────────────────
 function showLogin() {
   document.getElementById('login-screen').classList.remove('hidden');
   document.getElementById('app-screen').classList.add('hidden');
 }
-
 function showApp(user) {
   document.getElementById('login-screen').classList.add('hidden');
   document.getElementById('app-screen').classList.remove('hidden');
   document.getElementById('user-name-display').textContent = user.displayName || user.email;
-  document.getElementById('user-photo-display').src = user.photoURL || '';
+  const img = document.getElementById('user-photo-display');
+  if (img && user.photoURL) img.src = user.photoURL;
 }
 
 window.loginGoogle = function() {
   const provider = new firebase.auth.GoogleAuthProvider();
   psAuth.signInWithPopup(provider).catch(e => showToast(e.message, 'error'));
 };
+window.logoutUser = function() { psAuth.signOut(); };
 
-window.logoutUser = function() {
-  psAuth.signOut();
-};
-
-// ── API KEY ───────────────────────────────────────────
+// ── GEMINI API ────────────────────────────────────────────────
 function getApiKey() {
-  return localStorage.getItem('ps_api_key') || '';
+  return localStorage.getItem('ps_gemini_key') || '';
+}
+
+async function callGemini(prompt, maxTokens = 2048) {
+  const apiKey = getApiKey();
+  if (!apiKey) throw new Error('Configure sua chave Gemini gratuita em Configurações!');
+
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: {
+          temperature: 0.7,
+          maxOutputTokens: maxTokens,
+          responseMimeType: 'application/json'
+        }
+      })
+    }
+  );
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    const msg = err.error?.message || `Erro ${response.status}`;
+    // Mensagens amigáveis para erros comuns
+    if (response.status === 400) throw new Error('Chave inválida. Verifique em Configurações.');
+    if (response.status === 429) throw new Error('Limite de requisições atingido. Aguarde 1 minuto e tente novamente.');
+    throw new Error(msg);
+  }
+
+  const data = await response.json();
+  const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+  if (!text) throw new Error('Resposta vazia da IA. Tente novamente.');
+
+  // Gemini com responseMimeType json já retorna JSON puro, mas por segurança:
+  const clean = text.replace(/```json|```/g, '').trim();
+  return JSON.parse(clean);
 }
 
 function verificarApiKey() {
   const key = getApiKey();
-  const dot  = document.getElementById('status-dot');
-  const lbl  = document.getElementById('status-label');
-
+  const dot = document.getElementById('status-dot');
+  const lbl = document.getElementById('status-label');
   if (!key) {
     dot.className = 'status-dot offline';
-    lbl.textContent = 'API não configurada';
-    return;
-  }
-
-  dot.className = 'status-dot checking';
-  lbl.textContent = 'Verificando...';
-
-  // Testa a chave
-  fetch('https://api.anthropic.com/v1/models', {
-    headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01' }
-  }).then(r => {
-    if (r.ok || r.status === 200) {
-      dot.className = 'status-dot online';
-      lbl.textContent = 'API conectada';
-    } else {
-      dot.className = 'status-dot offline';
-      lbl.textContent = 'Chave inválida';
-    }
-  }).catch(() => {
-    // Sem acesso ao endpoint de models pelo CORS — assumir OK se a chave existe
+    lbl.textContent = 'Gemini não configurado';
+  } else {
     dot.className = 'status-dot online';
-    lbl.textContent = 'API configurada';
-  });
+    lbl.textContent = 'Gemini configurado ✓';
+  }
 }
 
 window.salvarApiKey = function() {
   const key = document.getElementById('cfg-api-key').value.trim();
-  if (!key) { showToast('Informe a chave de API', 'error'); return; }
-  localStorage.setItem('ps_api_key', key);
+  if (!key || !key.startsWith('AIza')) {
+    showToast('Chave inválida. Deve começar com "AIza"', 'error');
+    return;
+  }
+  localStorage.setItem('ps_gemini_key', key);
   document.getElementById('cfg-api-key').value = '';
-  const status = document.getElementById('cfg-key-status');
-  status.textContent = '✅ Chave salva com sucesso!';
-  status.className = 'cfg-status ok';
-  status.classList.remove('hidden');
+  const st = document.getElementById('cfg-key-status');
+  st.textContent = '✅ Chave Gemini salva! Agora vá em "Buscar Nicho".';
+  st.className = 'cfg-status ok';
+  st.classList.remove('hidden');
   verificarApiKey();
-  showToast('Chave de API salva ✓');
+  showToast('Chave Gemini salva ✓', 'success');
 };
 
-window.salvarConfig = function() {
-  const minVendas = document.getElementById('cfg-min-vendas').value;
-  const minScore  = document.getElementById('cfg-min-score').value;
-  if (minVendas) localStorage.setItem('ps_min_vendas', minVendas);
-  if (minScore)  localStorage.setItem('ps_min_score', minScore);
-  showToast('Configurações salvas ✓');
-};
-
-window.salvarCustos = function() {
-  const campos = ['cfg-filamento','cfg-energia','cfg-mao-obra','cfg-margem-min'];
-  const keys   = ['ps_custo_fil','ps_custo_energia','ps_custo_mao','ps_margem_min'];
-  campos.forEach((id, i) => {
-    const v = document.getElementById(id).value;
-    if (v) localStorage.setItem(keys[i], v);
-  });
-  showToast('Custos salvos ✓');
-};
-
-// Preenche campos de config com valores salvos
-function carregarConfigs() {
-  const map = {
-    'cfg-min-vendas': 'ps_min_vendas',
-    'cfg-min-score':  'ps_min_score',
-    'cfg-filamento':  'ps_custo_fil',
-    'cfg-energia':    'ps_custo_energia',
-    'cfg-mao-obra':   'ps_custo_mao',
-    'cfg-margem-min': 'ps_margem_min'
-  };
-  Object.entries(map).forEach(([id, key]) => {
-    const el  = document.getElementById(id);
-    const val = localStorage.getItem(key);
-    if (el && val) el.value = val;
-  });
-}
-
-// ── TABS ──────────────────────────────────────────────
+// ── TABS ──────────────────────────────────────────────────────
 window.switchTab = function(tab) {
   document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
   document.querySelectorAll('.nav-item, .bnav-item').forEach(el => el.classList.remove('active'));
   document.getElementById('tab-' + tab).classList.add('active');
   document.querySelectorAll(`[data-tab="${tab}"]`).forEach(el => el.classList.add('active'));
-
-  if (tab === 'config') carregarConfigs();
+  if (tab === 'config')   carregarConfigs();
   if (tab === 'produtos') renderProdutos();
 };
 
-// ── ANALISAR PRODUTO ─────────────────────────────────
-window.analisarProduto = async function() {
-  const apiKey = getApiKey();
-  if (!apiKey) {
-    showToast('Configure sua chave de API Claude primeiro!', 'error');
-    switchTab('config');
+// ── SELEÇÃO DE NICHO ──────────────────────────────────────────
+function setupEventListeners() {
+  // Nicho cards
+  document.getElementById('niche-grid')?.addEventListener('click', e => {
+    const card = e.target.closest('.niche-card');
+    if (!card) return;
+    document.querySelectorAll('.niche-card').forEach(c => c.classList.remove('selected'));
+    card.classList.add('selected');
+    nichoSelecionado = card.dataset.niche;
+  });
+
+  // Chips de plataforma
+  document.getElementById('plat-chips')?.addEventListener('click', e => {
+    const chip = e.target.closest('.chip');
+    if (!chip) return;
+    document.querySelectorAll('#plat-chips .chip').forEach(c => c.classList.remove('active'));
+    chip.classList.add('active');
+    plataformaSelecionada = chip.dataset.plat;
+  });
+
+  // Chips de volume
+  document.getElementById('vol-chips')?.addEventListener('click', e => {
+    const chip = e.target.closest('.chip');
+    if (!chip) return;
+    document.querySelectorAll('#vol-chips .chip').forEach(c => c.classList.remove('active'));
+    chip.classList.add('active');
+    volumeMinimo = parseInt(chip.dataset.vol) || 0;
+  });
+
+  // Modal clique fora
+  document.getElementById('analise-modal')?.addEventListener('click', function(e) {
+    if (e.target === this) fecharModal('analise-modal');
+  });
+  document.getElementById('produto-modal')?.addEventListener('click', function(e) {
+    if (e.target === this) fecharModal('produto-modal');
+  });
+
+  // Menu mobile
+  document.getElementById('menu-btn')?.addEventListener('click', () => {
+    document.getElementById('sidebar').classList.toggle('open');
+  });
+  document.getElementById('main')?.addEventListener('click', () => {
+    document.getElementById('sidebar').classList.remove('open');
+  });
+}
+
+// ── BUSCAR NICHO (função principal de descoberta) ─────────────
+window.buscarNicho = async function() {
+  if (!nichoSelecionado) {
+    showToast('Selecione um nicho antes de buscar!', 'error');
+    // Destaca a grade de nichos
+    document.getElementById('niche-grid').style.animation = 'shake .4s ease';
+    setTimeout(() => { document.getElementById('niche-grid').style.animation = ''; }, 500);
     return;
   }
 
-  const nome    = document.getElementById('f-nome').value.trim();
-  const plat    = document.getElementById('f-plataforma').value;
-  const cat     = document.getElementById('f-categoria').value;
-  const preco   = document.getElementById('f-preco').value;
-  const vendas  = document.getElementById('f-vendas').value;
-  const concorr = document.getElementById('f-concorrentes').value;
-  const aval    = document.getElementById('f-avaliacao').value;
-  const url     = document.getElementById('f-url').value;
-  const desc    = document.getElementById('f-descricao').value;
+  const foco   = document.getElementById('s-foco')?.value.trim() || '';
+  const custoFil   = localStorage.getItem('ps_custo_fil')    || '80';
+  const custoEnerg = localStorage.getItem('ps_custo_energia') || '1.50';
+  const custoMao   = localStorage.getItem('ps_custo_mao')    || '25';
 
-  const errorEl = document.getElementById('form-error');
-  if (!nome || !preco || !vendas) {
-    errorEl.textContent = 'Preencha os campos obrigatórios: Nome, Preço e Vendas/dia.';
-    errorEl.classList.remove('hidden');
-    return;
-  }
-  errorEl.classList.add('hidden');
+  setBuscarLoading(true);
 
-  // Custos do usuário
-  const custoFil    = localStorage.getItem('ps_custo_fil')    || '80';
-  const custoEnerg  = localStorage.getItem('ps_custo_energia') || '1.50';
-  const custoMao    = localStorage.getItem('ps_custo_mao')    || '25';
-  const margemMin   = localStorage.getItem('ps_margem_min')   || '40';
+  const hoje = new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' });
 
-  const prompt = `Você é um especialista em impressão 3D e análise de mercado para e-commerce brasileiro.
+  const prompt = `Você é um especialista em e-commerce brasileiro e impressão 3D FDM.
 
-Analise este produto para avaliar viabilidade de produção 3D e venda nas plataformas online:
+Data de hoje: ${hoje}
+Nicho pesquisado: ${nichoSelecionado}
+Plataforma(s): ${plataformaSelecionada}
+Volume mínimo desejado: ${volumeMinimo > 0 ? volumeMinimo + ' vendas/dia' : 'sem restrição'}
+${foco ? 'Foco específico: ' + foco : ''}
 
-PRODUTO: ${nome}
-PLATAFORMA: ${plat}
-CATEGORIA: ${cat}
-PREÇO DE VENDA: R$ ${preco}
-VENDAS ESTIMADAS/DIA: ${vendas}
-CONCORRENTES: ${concorr || 'não informado'}
-AVALIAÇÃO MÉDIA: ${aval || 'não informado'}
-${url ? 'URL: ' + url : ''}
-${desc ? 'DESCRIÇÃO: ' + desc : ''}
-
-CUSTOS DO PRODUTOR:
-- Filamento PLA: R$ ${custoFil}/kg
-- Energia: R$ ${custoEnerg}/hora
+Custos do produtor:
+- Filamento: R$ ${custoFil}/kg
+- Energia: R$ ${custoEnerg}/hora  
 - Mão de obra: R$ ${custoMao}/hora
-- Margem mínima aceitável: ${margemMin}%
 
-Responda EXCLUSIVAMENTE em JSON válido, sem texto antes ou depois, sem markdown:
+Identifique os 12 produtos mais vendidos deste nicho no e-commerce brasileiro, priorizando produtos que POSSAM ser fabricados com impressora 3D FDM doméstica.
 
+Para cada produto, estime métricas realistas de mercado. Ordene do maior para o menor volume de vendas.
+
+Retorne SOMENTE JSON válido neste formato exato:
 {
-  "printabilidade": <0-10, quão fácil é produzir em impressora 3D FDM comum>,
-  "oportunidade": <0-10, potencial de mercado e lucro>,
-  "saturacao": <0-10, nível de saturação do mercado — 10 = muito saturado>,
-  "veredicto": <"PRODUZIR" | "AVALIAR" | "EVITAR">,
-  "material_principal": <"PLA" | "PETG" | "ABS" | "TPU" | "PETG-CF" | "PLA+">,
-  "material_alternativo": <material secundário ou string vazia>,
-  "tempo_impressao": <"X h Ym" por unidade>,
-  "custo_material_min": <número em reais, mínimo>,
-  "custo_material_max": <número em reais, máximo>,
-  "margem_estimada": <porcentagem como número>,
-  "preco_sugerido": <número em reais>,
-  "dificuldade": <"Fácil" | "Médio" | "Difícil" | "Muito Difícil">,
-  "nivel_concorrencia": <"Baixa" | "Média" | "Alta" | "Altíssima">,
-  "config_impressao": {
-    "camada": <"0.1mm" | "0.15mm" | "0.2mm" | "0.3mm">,
-    "infill": <porcentagem como string, ex: "15%">,
-    "suporte": <"Não" | "Sim" | "Opcional">,
-    "temperatura": <temperatura do bico em Celsius como string, ex: "210°C">,
-    "velocidade": <velocidade em mm/s como string, ex: "60mm/s">
-  },
-  "pontos_favoraveis": [<3 a 5 strings com pontos positivos>],
-  "riscos": [<3 a 5 strings com riscos e desafios>],
-  "analise_resumo": <string com análise detalhada de 3-4 frases>,
-  "keywords_shopee": [<6 a 8 palavras-chave relevantes para SEO>],
-  "diferenciais": [<3 a 5 sugestões de como se diferenciar da concorrência>]
-}`;
+  "nicho": "${nichoSelecionado}",
+  "plataforma": "${plataformaSelecionada}",
+  "data_referencia": "${hoje}",
+  "produtos": [
+    {
+      "nome": "nome comercial do produto",
+      "descricao": "descrição em 1 linha do que é o produto",
+      "preco_min": 15.00,
+      "preco_max": 45.00,
+      "vendas_dia_estimadas": 750,
+      "concorrentes_estimados": 80,
+      "avaliacao_media": 4.6,
+      "printabilidade": 8,
+      "oportunidade": 7,
+      "saturacao": 5,
+      "veredicto": "PRODUZIR",
+      "material_sugerido": "PLA",
+      "motivo": "Uma frase explicando por que vale ou não a pena produzir",
+      "diferencial_possivel": "Como se diferenciar com impressão 3D"
+    }
+  ]
+}
 
-  setLoading(true);
+Regras:
+- printabilidade 0-10: capacidade de produzir em FDM doméstico (10 = trivial)
+- oportunidade 0-10: potencial de lucro e mercado (10 = excelente)
+- saturacao 0-10: saturação de mercado (10 = extremamente saturado, evitar)
+- veredicto: "PRODUZIR" se oportunidade >= 7 e printabilidade >= 6, "AVALIAR" se intermediário, "EVITAR" se saturado ou muito difícil
+- vendas_dia_estimadas: estimativa realista para um produto de destaque na plataforma
+- Inclua produtos com alta e baixa printabilidade para dar visão completa do nicho`;
 
   try {
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-        'anthropic-dangerous-direct-browser-access': 'true'
-      },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 1500,
-        messages: [{ role: 'user', content: prompt }]
-      })
-    });
+    const resultado = await callGemini(prompt, 3000);
 
-    if (!response.ok) {
-      const err = await response.json().catch(() => ({}));
-      throw new Error(err.error?.message || `Erro ${response.status}`);
+    if (!resultado.produtos || !Array.isArray(resultado.produtos)) {
+      throw new Error('Formato inesperado da resposta. Tente novamente.');
     }
 
-    const data = await response.json();
-    const text = data.content?.[0]?.text || '';
+    // Filtra por volume mínimo se necessário
+    let produtos = resultado.produtos;
+    if (volumeMinimo > 0) {
+      produtos = produtos.filter(p => p.vendas_dia_estimadas >= volumeMinimo);
+    }
 
-    // Remove possível markdown
-    const clean = text.replace(/```json|```/g, '').trim();
-    const result = JSON.parse(clean);
-
-    // Enriquece com dados do form
-    result._form = { nome, plat, cat, preco: Number(preco), vendas: Number(vendas), concorr: Number(concorr) || 0, aval: Number(aval) || 0, url, desc };
-
-    currentResult = result;
-    renderResultado(result);
-    showToast('Análise concluída! ✓', 'success');
-
+    renderDiscovery(resultado, produtos);
+    showToast(`${produtos.length} produtos encontrados no nicho!`, 'success');
   } catch (e) {
-    console.error(e);
-    showToast('Erro na análise: ' + e.message, 'error');
+    showToast('Erro: ' + e.message, 'error');
+    if (e.message.includes('Configure')) switchTab('config');
   } finally {
-    setLoading(false);
+    setBuscarLoading(false);
   }
 };
 
-function setLoading(loading) {
-  const btn  = document.getElementById('btn-analyze');
-  const txt  = document.getElementById('analyze-btn-text');
-  const load = document.getElementById('analyze-loader');
+function setBuscarLoading(loading) {
+  const btn  = document.getElementById('btn-search');
+  const txt  = document.getElementById('search-btn-text');
+  const load = document.getElementById('search-loader');
   btn.disabled = loading;
   txt.classList.toggle('hidden', loading);
   load.classList.toggle('hidden', !loading);
 }
 
-// ── RENDER RESULTADO ──────────────────────────────────
-function renderResultado(r) {
-  // Mostra card e esconde placeholder
-  document.getElementById('result-placeholder').classList.add('hidden');
-  const card = document.getElementById('result-card');
-  card.classList.remove('hidden');
+// ── RENDER DISCOVERY ──────────────────────────────────────────
+function renderDiscovery(meta, produtos) {
+  const section = document.getElementById('discovery-section');
+  const grid    = document.getElementById('discovery-grid');
+  const title   = document.getElementById('discovery-title');
 
-  // Nome e veredicto
-  document.getElementById('res-nome').textContent = r._form?.nome || '—';
-  const badge = document.getElementById('res-veredicto-badge');
-  badge.textContent = r.veredicto;
-  badge.className = 'verdict-badge ' + r.veredicto;
+  title.textContent = `${meta.nicho} · ${meta.plataforma} · ${meta.data_referencia}`;
+  section.classList.remove('hidden');
 
-  // Scores (círculos SVG)
-  setScoreCircle('circle-print', 'res-printabilidade', r.printabilidade);
-  setScoreCircle('circle-opp',   'res-oportunidade',   r.oportunidade);
-  setScoreCircle('circle-sat',   'res-saturacao',      r.saturacao);
+  if (!produtos.length) {
+    grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1"><div class="empty-icon">◎</div><p>Nenhum produto encontrou o filtro de volume mínimo.</p><button class="btn-ghost" onclick="document.getElementById('vol-chips').querySelector('[data-vol=\\'0\\']').click();buscarNicho()">Remover filtro de volume</button></div>`;
+    return;
+  }
 
-  // Info cards
-  document.getElementById('res-material').textContent     = r.material_principal || '—';
-  document.getElementById('res-material-alt').textContent = r.material_alternativo || 'sem alternativa';
-  document.getElementById('res-tempo').textContent        = r.tempo_impressao || '—';
+  grid.innerHTML = produtos.map((p, i) => {
+    const scoreGeral = ((p.printabilidade + p.oportunidade + (10 - p.saturacao)) / 3).toFixed(1);
+    const verdClass  = p.veredicto === 'PRODUZIR' ? 'PRODUZIR' : p.veredicto === 'AVALIAR' ? 'AVALIAR' : 'EVITAR';
+    const vendasFmt  = p.vendas_dia_estimadas >= 1000 ? (p.vendas_dia_estimadas / 1000).toFixed(1) + 'k' : p.vendas_dia_estimadas;
 
-  const custoMin = r.custo_material_min || 0;
-  const custoMax = r.custo_material_max || 0;
-  document.getElementById('res-custo').textContent = `R$ ${custoMin.toFixed(2)}–${custoMax.toFixed(2)}`;
+    return `
+    <div class="discovery-card ${verdClass}" onclick="abrirAnalise(${i})" data-index="${i}">
+      <div class="dc-header">
+        <div class="dc-rank">#${i + 1}</div>
+        <span class="pc-badge ${verdClass}">${p.veredicto}</span>
+      </div>
+      <div class="dc-nome">${p.nome}</div>
+      <div class="dc-desc">${p.descricao}</div>
+      <div class="dc-scores">
+        <div class="dc-score-item">
+          <div class="dc-score-val" style="color:var(--accent)">${p.printabilidade}</div>
+          <div class="dc-score-lbl">Print</div>
+        </div>
+        <div class="dc-score-item">
+          <div class="dc-score-val" style="color:var(--blue)">${p.oportunidade}</div>
+          <div class="dc-score-lbl">Oport.</div>
+        </div>
+        <div class="dc-score-item">
+          <div class="dc-score-val" style="color:var(--yellow)">${p.saturacao}</div>
+          <div class="dc-score-lbl">Satur.</div>
+        </div>
+        <div class="dc-score-item">
+          <div class="dc-score-val" style="color:var(--purple)">${scoreGeral}</div>
+          <div class="dc-score-lbl">Score</div>
+        </div>
+      </div>
+      <div class="dc-stats">
+        <span class="dc-stat">📦 ~${vendasFmt}/dia</span>
+        <span class="dc-stat">💰 R$ ${p.preco_min}–${p.preco_max}</span>
+        <span class="dc-stat">🧵 ${p.material_sugerido}</span>
+      </div>
+      <div class="dc-motivo">${p.motivo}</div>
+      <button class="dc-btn-analise">🔬 Análise Profunda →</button>
+    </div>`;
+  }).join('');
 
-  const margem = r.margem_estimada || 0;
-  document.getElementById('res-margem').textContent    = margem + '%';
-  document.getElementById('res-preco-sug').textContent = `preço sugerido: R$ ${(r.preco_sugerido || 0).toFixed(2)}`;
+  // Guarda a lista para uso posterior
+  window._discoveryProdutos = produtos;
+  window._discoveryMeta     = meta;
 
-  // Tags
-  document.getElementById('res-dificuldade').textContent  = r.dificuldade || '—';
-  document.getElementById('res-concorrencia').textContent = r.nivel_concorrencia || '—';
-
-  // Config de impressão
-  const cfg = r.config_impressao || {};
-  const grid = document.getElementById('res-config-grid');
-  grid.innerHTML = [
-    ['Camada', cfg.camada],
-    ['Infill', cfg.infill],
-    ['Suporte', cfg.suporte],
-    ['Temperatura', cfg.temperatura],
-    ['Velocidade', cfg.velocidade]
-  ].filter(([,v]) => v).map(([k,v]) => `<span class="cfg-chip"><strong>${k}:</strong> ${v}</span>`).join('');
-
-  // Pros e cons
-  const prosList = document.getElementById('res-pros');
-  const consList = document.getElementById('res-cons');
-  prosList.innerHTML = (r.pontos_favoraveis || []).map(p => `<li>${p}</li>`).join('');
-  consList.innerHTML = (r.riscos || []).map(p => `<li>${p}</li>`).join('');
-
-  // Análise
-  document.getElementById('res-analise').textContent = r.analise_resumo || '—';
-
-  // Keywords
-  const kwList = document.getElementById('res-keywords');
-  kwList.innerHTML = (r.keywords_shopee || []).map(k => `<span class="kw-tag">${k}</span>`).join('');
-
-  // Diferenciais
-  const difList = document.getElementById('res-diferenciais');
-  difList.innerHTML = (r.diferenciais || []).map(d => `<li>${d}</li>`).join('');
-
-  // Botão salvar
-  document.getElementById('btn-save').disabled = false;
+  // Scroll suave até os resultados
+  section.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
-function setScoreCircle(circleId, numId, value) {
-  const v    = Math.min(10, Math.max(0, value || 0));
-  const pct  = v / 10;
-  const circ = 2 * Math.PI * 34; // r=34 → circumference ≈ 213.6
-  const offset = circ - (pct * circ);
-  const el = document.getElementById(circleId);
-  if (el) el.style.strokeDashoffset = offset.toFixed(1);
-  const numEl = document.getElementById(numId);
-  if (numEl) numEl.textContent = v.toFixed(1);
-}
+// ── ANÁLISE PROFUNDA ──────────────────────────────────────────
+window.abrirAnalise = async function(index) {
+  const produto = window._discoveryProdutos?.[index];
+  const meta    = window._discoveryMeta || {};
+  if (!produto) return;
 
-// ── SALVAR PRODUTO ────────────────────────────────────
-window.salvarProduto = async function() {
-  if (!currentResult || !currentUser) return;
-  const r = currentResult;
-  const btn = document.getElementById('btn-save');
-  btn.disabled = true;
-  btn.textContent = '⏳ Salvando...';
+  produtoParaAnalise = { ...produto, nicho: meta.nicho, plataforma: meta.plataforma };
+
+  // Abre modal e mostra loading
+  document.getElementById('analise-loading').classList.remove('hidden');
+  document.getElementById('analise-resultado').classList.add('hidden');
+  document.getElementById('analise-modal').classList.remove('hidden');
+
+  const custoFil   = localStorage.getItem('ps_custo_fil')    || '80';
+  const custoEnerg = localStorage.getItem('ps_custo_energia') || '1.50';
+  const custoMao   = localStorage.getItem('ps_custo_mao')    || '25';
+  const margemMin  = localStorage.getItem('ps_margem_min')   || '40';
+
+  const prompt = `Você é um especialista em impressão 3D FDM e mercado e-commerce brasileiro.
+
+Faça uma ANÁLISE PROFUNDA deste produto para produção 3D:
+
+PRODUTO: ${produto.nome}
+DESCRIÇÃO: ${produto.descricao}
+NICHO: ${meta.nicho || 'não especificado'}
+PLATAFORMA: ${meta.plataforma || 'Shopee'}
+PREÇO DE MERCADO: R$ ${produto.preco_min} – R$ ${produto.preco_max}
+VENDAS ESTIMADAS/DIA: ${produto.vendas_dia_estimadas}
+CONCORRENTES ESTIMADOS: ${produto.concorrentes_estimados}
+AVALIAÇÃO MÉDIA: ${produto.avaliacao_media}
+PRINTABILIDADE PRÉVIA: ${produto.printabilidade}/10
+
+CUSTOS DO PRODUTOR:
+- Filamento: R$ ${custoFil}/kg
+- Energia: R$ ${custoEnerg}/hora
+- Mão de obra: R$ ${custoMao}/hora  
+- Margem mínima aceitável: ${margemMin}%
+
+Retorne SOMENTE JSON válido:
+{
+  "printabilidade": <0-10 revisado>,
+  "oportunidade": <0-10>,
+  "saturacao": <0-10>,
+  "veredicto": <"PRODUZIR"|"AVALIAR"|"EVITAR">,
+  "material_principal": <"PLA"|"PETG"|"ABS"|"TPU"|"PLA+"|"PETG-CF"|"Resina">,
+  "material_alternativo": <segundo material ou "">,
+  "dificuldade": <"Fácil"|"Médio"|"Difícil"|"Muito Difícil">,
+  "nivel_concorrencia": <"Baixa"|"Média"|"Alta"|"Altíssima">,
+  "tempo_impressao": <"Xh Ym" por unidade>,
+  "custo_material_min": <número R$ mínimo por unidade>,
+  "custo_material_max": <número R$ máximo por unidade>,
+  "custo_total_min": <custo total mínimo incluindo energia e mão de obra>,
+  "custo_total_max": <custo total máximo>,
+  "preco_sugerido_min": <preço mínimo para venda>,
+  "preco_sugerido_max": <preço máximo para venda>,
+  "margem_estimada_min": <margem mínima %>,
+  "margem_estimada_max": <margem máxima %>,
+  "config_impressao": {
+    "camada": "0.2mm",
+    "infill": "20%",
+    "suporte": "Não",
+    "temperatura_bico": "210°C",
+    "temperatura_mesa": "60°C",
+    "velocidade": "60mm/s",
+    "tempo_total_horas": 3.5
+  },
+  "pontos_favoraveis": ["ponto1", "ponto2", "ponto3", "ponto4"],
+  "riscos": ["risco1", "risco2", "risco3"],
+  "analise_resumo": "análise detalhada de 3-4 frases sobre viabilidade",
+  "keywords_shopee": ["kw1", "kw2", "kw3", "kw4", "kw5", "kw6"],
+  "diferenciais": ["diferencial1", "diferencial2", "diferencial3"],
+  "ideias_variacao": ["variacao1 do produto", "variacao2", "variacao3"],
+  "alertas": ["alerta1 se houver patentes ou restrições", "alerta2"]
+}`;
 
   try {
-    const payload = {
-      nome:            r._form.nome,
-      plataforma:      r._form.plat,
-      categoria:       r._form.cat,
-      precoVenda:      r._form.preco,
-      vendasDia:       r._form.vendas,
-      concorrentes:    r._form.concorr,
-      avaliacao:       r._form.aval,
-      url:             r._form.url || '',
-      descricao:       r._form.desc || '',
-      // Resultado da IA
-      printabilidade:  r.printabilidade,
-      oportunidade:    r.oportunidade,
-      saturacao:       r.saturacao,
-      veredicto:       r.veredicto,
-      materialPrincipal: r.material_principal,
-      materialAlt:     r.material_alternativo,
-      tempoImpressao:  r.tempo_impressao,
-      custoMin:        r.custo_material_min,
-      custoMax:        r.custo_material_max,
-      margemEstimada:  r.margem_estimada,
-      precoSugerido:   r.preco_sugerido,
-      dificuldade:     r.dificuldade,
-      nivelConcorrencia: r.nivel_concorrencia,
-      configImpressao: r.config_impressao || {},
-      pontosPositivos: r.pontos_favoraveis || [],
-      riscos:          r.riscos || [],
-      analise:         r.analise_resumo,
-      keywords:        r.keywords_shopee || [],
-      diferenciais:    r.diferenciais || [],
-      // Meta
-      scoreTotal: ((r.printabilidade + r.oportunidade + (10 - r.saturacao)) / 3).toFixed(2),
-      salvoEm:    new Date().toISOString(),
-      usuario:    currentUser.email
-    };
-
-    await psDB.collection('produtos').add(payload);
-    showToast('Produto salvo! ✓', 'success');
-    btn.textContent = '✅ Salvo!';
-    currentResult = null;
+    const resultado = await callGemini(prompt, 2000);
+    resultado._produto = { ...produto, nicho: meta.nicho, plataforma: meta.plataforma };
+    renderAnalise(resultado);
   } catch (e) {
-    showToast('Erro ao salvar: ' + e.message, 'error');
-    btn.disabled = false;
-    btn.textContent = '💾 Salvar no Firebase';
+    fecharModal('analise-modal');
+    showToast('Erro na análise: ' + e.message, 'error');
   }
 };
 
-window.limparFormulario = function() {
-  ['f-nome','f-preco','f-vendas','f-concorrentes','f-avaliacao','f-url','f-descricao'].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.value = '';
-  });
-  document.getElementById('form-error').classList.add('hidden');
-  document.getElementById('result-placeholder').classList.remove('hidden');
-  document.getElementById('result-card').classList.add('hidden');
-  document.getElementById('btn-save').disabled = false;
-  document.getElementById('btn-save').textContent = '💾 Salvar no Firebase';
-  currentResult = null;
-};
+// ── RENDER ANÁLISE PROFUNDA ───────────────────────────────────
+function renderAnalise(r) {
+  const p = r._produto;
 
-// ── ESCUTA FIRESTORE ─────────────────────────────────
-function iniciarEscutadores() {
-  psDB.collection('produtos').orderBy('salvoEm', 'desc').onSnapshot(snap => {
-    produtosSalvos = snap.docs.map(d => ({ _id: d.id, ...d.data() }));
-    atualizarDashboard();
-    renderProdutos();
+  document.getElementById('analise-loading').classList.add('hidden');
+  const container = document.getElementById('analise-resultado');
+  container.classList.remove('hidden');
+
+  const verdClass = r.veredicto;
+  const scoreGeral = ((r.printabilidade + r.oportunidade + (10 - r.saturacao)) / 3).toFixed(1);
+  const circ = 213.6; // 2 * PI * 34
+
+  container.innerHTML = `
+    <div class="analise-result-header">
+      <div>
+        <div class="analise-nome">${p.nome}</div>
+        <div style="font-size:12px;color:var(--text3)">${p.nicho} · ${p.plataforma}</div>
+      </div>
+      <span class="verdict-badge ${verdClass}">${r.veredicto}</span>
+    </div>
+
+    <!-- Scores circulares -->
+    <div class="scores-row">
+      ${renderCircle('circle-p', r.printabilidade, 'Printabilidade', 'var(--accent)')}
+      ${renderCircle('circle-o', r.oportunidade,   'Oportunidade',   'var(--blue)')}
+      ${renderCircle('circle-s', r.saturacao,      'Saturação',      'var(--yellow)')}
+      ${renderCircle('circle-g', parseFloat(scoreGeral), 'Score Geral', 'var(--purple)')}
+    </div>
+
+    <!-- Info cards -->
+    <div class="info-grid">
+      <div class="info-card"><div class="info-icon">🧵</div><div class="info-label">Material</div><div class="info-value">${r.material_principal}</div><div class="info-sub">${r.material_alternativo || 'sem alternativa'}</div></div>
+      <div class="info-card"><div class="info-icon">⏱</div><div class="info-label">Tempo Print</div><div class="info-value">${r.tempo_impressao}</div><div class="info-sub">por unidade</div></div>
+      <div class="info-card"><div class="info-icon">💰</div><div class="info-label">Custo Total</div><div class="info-value">R$ ${(r.custo_total_min||0).toFixed(2)}–${(r.custo_total_max||0).toFixed(2)}</div><div class="info-sub">energia + material + mão de obra</div></div>
+      <div class="info-card info-highlight"><div class="info-icon">📈</div><div class="info-label">Margem Est.</div><div class="info-value">${r.margem_estimada_min||0}%–${r.margem_estimada_max||0}%</div><div class="info-sub">preço: R$ ${(r.preco_sugerido_min||0).toFixed(2)}–${(r.preco_sugerido_max||0).toFixed(2)}</div></div>
+    </div>
+
+    <!-- Tags -->
+    <div class="tags-row">
+      <div class="tag-item"><span class="tag-label">Dificuldade:</span><span class="tag-value">${r.dificuldade}</span></div>
+      <div class="tag-item"><span class="tag-label">Concorrência:</span><span class="tag-value">${r.nivel_concorrencia}</span></div>
+      <div class="tag-item"><span class="tag-label">Vendas/dia:</span><span class="tag-value">~${p.vendas_dia_estimadas}</span></div>
+    </div>
+
+    <!-- Config impressão -->
+    <div class="print-config-box">
+      <div class="print-config-title">⚙️ Configuração de Impressão Sugerida</div>
+      <div class="print-config-grid">
+        ${Object.entries(r.config_impressao || {}).filter(([k]) => k !== 'tempo_total_horas').map(([k,v]) => `<span class="cfg-chip"><strong>${k.replace('_',' ')}:</strong> ${v}</span>`).join('')}
+      </div>
+    </div>
+
+    <!-- Pros e Cons -->
+    <div class="pros-cons-row">
+      <div class="pros-box">
+        <div class="pros-title">✅ Pontos Favoráveis</div>
+        <ul>${(r.pontos_favoraveis||[]).map(p => `<li>${p}</li>`).join('')}</ul>
+      </div>
+      <div class="cons-box">
+        <div class="cons-title">⚠️ Riscos</div>
+        <ul>${(r.riscos||[]).map(p => `<li>${p}</li>`).join('')}</ul>
+      </div>
+    </div>
+
+    <!-- Análise resumo -->
+    <div class="analise-box">
+      <div class="analise-title">🤖 Análise da IA</div>
+      <p>${r.analise_resumo}</p>
+    </div>
+
+    <!-- Ideias de variação -->
+    ${r.ideias_variacao?.length ? `
+    <div class="analise-box">
+      <div class="analise-title">💡 Ideias de Variação do Produto</div>
+      <ul style="margin-top:8px;padding-left:16px;color:var(--text2);font-size:13px;line-height:1.8">${r.ideias_variacao.map(d => `<li>${d}</li>`).join('')}</ul>
+    </div>` : ''}
+
+    <!-- Como se diferenciar -->
+    <div class="analise-box">
+      <div class="analise-title">🚀 Como Se Diferenciar</div>
+      <ul style="margin-top:8px;padding-left:16px;color:var(--text2);font-size:13px;line-height:1.8">${(r.diferenciais||[]).map(d => `<li>${d}</li>`).join('')}</ul>
+    </div>
+
+    <!-- Alertas (se houver) -->
+    ${r.alertas?.length ? `
+    <div class="analise-box" style="border-left:3px solid var(--yellow);margin-top:12px">
+      <div class="analise-title" style="color:var(--yellow)">⚠️ Alertas</div>
+      <ul style="margin-top:8px;padding-left:16px;color:var(--text2);font-size:13px;line-height:1.8">${r.alertas.map(a => `<li>${a}</li>`).join('')}</ul>
+    </div>` : ''}
+
+    <!-- Keywords -->
+    <div class="keywords-box">
+      <div class="keywords-title">🔍 Palavras-chave para Shopee / TikTok</div>
+      <div class="keywords-list">${(r.keywords_shopee||[]).map(k => `<span class="kw-tag">${k}</span>`).join('')}</div>
+    </div>
+
+    <!-- Ações -->
+    <div class="result-actions" style="padding:20px 0 0">
+      <button class="btn-save" onclick="salvarAnalise()">💾 Salvar no Firebase</button>
+      <button class="btn-ghost" onclick="fecharModal('analise-modal')">Fechar</button>
+    </div>
+  `;
+
+  // Anima os círculos SVG
+  setTimeout(() => animarCirculos(r), 100);
+
+  // Guarda resultado para salvar
+  window._currentAnalise = r;
+}
+
+function renderCircle(id, value, label, color) {
+  const v = Math.min(10, Math.max(0, value || 0));
+  const circ = 213.6;
+  const offset = circ - (v / 10) * circ;
+  return `
+  <div class="score-circle-wrap">
+    <svg class="score-circle" viewBox="0 0 80 80">
+      <circle class="track" cx="40" cy="40" r="34"/>
+      <circle class="fill" cx="40" cy="40" r="34" id="${id}"
+        style="stroke:${color};stroke-dashoffset:${offset.toFixed(1)};stroke-dasharray:${circ}"/>
+    </svg>
+    <div class="score-inner">
+      <div class="score-num">${v.toFixed(1)}</div>
+      <div class="score-lbl">${label}</div>
+    </div>
+  </div>`;
+}
+
+function animarCirculos(r) {
+  const valores = {
+    'circle-p': r.printabilidade,
+    'circle-o': r.oportunidade,
+    'circle-s': r.saturacao,
+    'circle-g': parseFloat(((r.printabilidade + r.oportunidade + (10 - r.saturacao)) / 3).toFixed(1))
+  };
+  const circ = 213.6;
+  Object.entries(valores).forEach(([id, val]) => {
+    const el = document.getElementById(id);
+    if (el) {
+      const v = Math.min(10, Math.max(0, val || 0));
+      el.style.transition = 'stroke-dashoffset 1s cubic-bezier(.4,0,.2,1)';
+      el.style.strokeDashoffset = (circ - (v / 10) * circ).toFixed(1);
+    }
   });
 }
 
-// ── DASHBOARD ─────────────────────────────────────────
+// ── SALVAR ANÁLISE ────────────────────────────────────────────
+window.salvarAnalise = async function() {
+  const r = window._currentAnalise;
+  if (!r || !currentUser) return;
+  const p = r._produto || {};
+
+  const btn = document.querySelector('#analise-resultado .btn-save');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Salvando...'; }
+
+  try {
+    const scoreGeral = ((r.printabilidade + r.oportunidade + (10 - r.saturacao)) / 3);
+    const payload = {
+      nome:              p.nome,
+      descricao:         p.descricao || '',
+      nicho:             p.nicho || '',
+      plataforma:        p.plataforma || 'Shopee',
+      categoria:         p.nicho || '',
+      precoMin:          p.preco_min || 0,
+      precoMax:          p.preco_max || 0,
+      vendasDia:         p.vendas_dia_estimadas || 0,
+      concorrentes:      p.concorrentes_estimados || 0,
+      // IA
+      printabilidade:    r.printabilidade,
+      oportunidade:      r.oportunidade,
+      saturacao:         r.saturacao,
+      scoreTotal:        scoreGeral.toFixed(2),
+      veredicto:         r.veredicto,
+      materialPrincipal: r.material_principal,
+      materialAlt:       r.material_alternativo || '',
+      dificuldade:       r.dificuldade,
+      nivelConcorrencia: r.nivel_concorrencia,
+      tempoImpressao:    r.tempo_impressao,
+      custoMin:          r.custo_material_min || 0,
+      custoMax:          r.custo_material_max || 0,
+      custoTotalMin:     r.custo_total_min || 0,
+      custoTotalMax:     r.custo_total_max || 0,
+      margemMin:         r.margem_estimada_min || 0,
+      margemMax:         r.margem_estimada_max || 0,
+      margemEstimada:    r.margem_estimada_max || 0,
+      precoSugeridoMin:  r.preco_sugerido_min || 0,
+      precoSugeridoMax:  r.preco_sugerido_max || 0,
+      configImpressao:   r.config_impressao || {},
+      pontosPositivos:   r.pontos_favoraveis || [],
+      riscos:            r.riscos || [],
+      analise:           r.analise_resumo || '',
+      keywords:          r.keywords_shopee || [],
+      diferenciais:      r.diferenciais || [],
+      ideiasVariacao:    r.ideias_variacao || [],
+      alertas:           r.alertas || [],
+      // Meta
+      salvoEm: new Date().toISOString(),
+      usuario: currentUser.email
+    };
+
+    await psDB.collection('produtos').add(payload);
+    if (btn) { btn.textContent = '✅ Salvo!'; }
+    showToast('Produto salvo no Firebase! ✓', 'success');
+    window._currentAnalise = null;
+  } catch (e) {
+    showToast('Erro ao salvar: ' + e.message, 'error');
+    if (btn) { btn.disabled = false; btn.textContent = '💾 Salvar no Firebase'; }
+  }
+};
+
+// ── FIRESTORE — ESCUTA ────────────────────────────────────────
+function iniciarEscutadores() {
+  psDB.collection('produtos')
+    .where('usuario', '==', currentUser.email)
+    .orderBy('salvoEm', 'desc')
+    .onSnapshot(snap => {
+      produtosSalvos = snap.docs.map(d => ({ _id: d.id, ...d.data() }));
+      atualizarDashboard();
+      renderProdutos();
+    }, err => {
+      console.warn('Escuta Firestore:', err.message);
+      // Fallback sem filtro de usuário se índice não existe
+      psDB.collection('produtos').orderBy('salvoEm', 'desc').onSnapshot(snap => {
+        produtosSalvos = snap.docs.map(d => ({ _id: d.id, ...d.data() })).filter(p => p.usuario === currentUser.email);
+        atualizarDashboard();
+        renderProdutos();
+      });
+    });
+}
+
+// ── DASHBOARD ─────────────────────────────────────────────────
 function atualizarDashboard() {
   const total   = produtosSalvos.length;
   const produzir = produtosSalvos.filter(p => p.veredicto === 'PRODUZIR').length;
   const avaliar  = produtosSalvos.filter(p => p.veredicto === 'AVALIAR').length;
   const evitar   = produtosSalvos.filter(p => p.veredicto === 'EVITAR').length;
-  const pendente = produtosSalvos.filter(p => !p.veredicto).length;
 
   document.getElementById('kpi-total').textContent    = total || '0';
   document.getElementById('kpi-produzir').textContent = produzir || '0';
 
-  // Vendas médias
-  const avgVendas = total > 0
-    ? (produtosSalvos.reduce((s, p) => s + (p.vendasDia || 0), 0) / total).toFixed(0)
-    : '—';
-  document.getElementById('kpi-vendas').textContent = avgVendas !== '—' ? avgVendas : '—';
+  const avgVendas = total > 0 ? Math.round(produtosSalvos.reduce((s, p) => s + (p.vendasDia || 0), 0) / total) : '—';
+  document.getElementById('kpi-vendas').textContent = avgVendas;
 
-  // Score médio
-  const avgScore = total > 0
-    ? (produtosSalvos.reduce((s, p) => s + Number(p.scoreTotal || 0), 0) / total).toFixed(1)
-    : '—';
-  document.getElementById('kpi-score').textContent = avgScore !== '—' ? avgScore : '—';
+  const avgScore = total > 0 ? (produtosSalvos.reduce((s, p) => s + Number(p.scoreTotal || 0), 0) / total).toFixed(1) : '—';
+  document.getElementById('kpi-score').textContent = avgScore;
 
-  // Barras de veredicto
   const setBar = (id, count) => {
     const pct = total > 0 ? Math.round((count / total) * 100) : 0;
     const el  = document.getElementById(id);
@@ -477,57 +685,46 @@ function atualizarDashboard() {
   setBar('bar-produzir', produzir);
   setBar('bar-avaliar',  avaliar);
   setBar('bar-evitar',   evitar);
-  setBar('bar-pendente', pendente);
 
-  ['produzir','avaliar','evitar','pendente'].forEach(v => {
-    const el = document.getElementById('count-' + v);
-    if (el) el.textContent = { produzir, avaliar, evitar, pendente }[v];
+  const countMap = { produzir, avaliar, evitar };
+  Object.entries(countMap).forEach(([k, v]) => {
+    const el = document.getElementById('count-' + k);
+    if (el) el.textContent = v;
   });
 
-  // Top oportunidades
+  // Top 5
   const topDiv = document.getElementById('top-oportunidades');
   const top5   = [...produtosSalvos].sort((a, b) => b.scoreTotal - a.scoreTotal).slice(0, 5);
-  if (!top5.length) {
-    topDiv.innerHTML = `<div class="empty-state"><div class="empty-icon">◎</div><p>Nenhum produto analisado ainda.</p><button class="btn-ghost" onclick="switchTab('analisar')">Analisar primeiro produto →</button></div>`;
-  } else {
-    topDiv.innerHTML = top5.map((p, i) => `
+  topDiv.innerHTML = !top5.length
+    ? `<div class="empty-state"><div class="empty-icon">◎</div><p>Nenhum produto salvo ainda.</p><button class="btn-ghost" onclick="switchTab('buscar')">Buscar primeiro nicho →</button></div>`
+    : top5.map((p, i) => `
       <div class="top-item" onclick="abrirModal('${p._id}')">
         <div class="top-rank ${i===0?'r1':i===1?'r2':i===2?'r3':''}">#${i+1}</div>
-        <div class="top-info">
-          <div class="top-nome">${p.nome}</div>
-          <div class="top-meta">${p.plataforma} · ${p.vendasDia || 0} vendas/dia</div>
-        </div>
+        <div class="top-info"><div class="top-nome">${p.nome}</div><div class="top-meta">${p.plataforma||''} · ${p.vendasDia||0} vendas/dia</div></div>
         <div class="top-score">${Number(p.scoreTotal||0).toFixed(1)}</div>
       </div>`).join('');
-  }
 
   // Recentes
   const recentesDiv = document.getElementById('recentes-list');
   const recentes    = produtosSalvos.slice(0, 5);
-  if (!recentes.length) {
-    recentesDiv.innerHTML = '<div class="empty-mini">Nenhum produto ainda</div>';
-  } else {
-    recentesDiv.innerHTML = recentes.map(p => `
+  recentesDiv.innerHTML = !recentes.length
+    ? '<div class="empty-mini">Nenhum produto ainda</div>'
+    : recentes.map(p => `
       <div class="recente-item" onclick="abrirModal('${p._id}')">
-        <div>
-          <div class="recente-nome">${p.nome}</div>
-          <span class="verdict-label ${verdictClass(p.veredicto)}" style="font-size:10px">${p.veredicto || 'PENDENTE'}</span>
-        </div>
+        <div><div class="recente-nome">${p.nome}</div><span class="verdict-label ${verdictClass(p.veredicto)}" style="font-size:10px">${p.veredicto||'PENDENTE'}</span></div>
         <span class="recente-data">${formatDate(p.salvoEm)}</span>
       </div>`).join('');
-  }
 }
 
-// ── RENDER PRODUTOS ───────────────────────────────────
+// ── RENDER PRODUTOS ───────────────────────────────────────────
 window.aplicarFiltros = function() { renderProdutos(); };
-window.limparFiltros = function() {
+window.limparFiltros  = function() {
   ['filter-veredicto','filter-plataforma','filter-vendas','filter-score','filter-busca'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.value = '';
   });
   renderProdutos();
 };
-
 window.sortProdutos = function(key) {
   sortKey = key;
   document.querySelectorAll('.sort-btn').forEach(b => b.classList.remove('active'));
@@ -537,26 +734,23 @@ window.sortProdutos = function(key) {
 
 function renderProdutos() {
   let dados = [...produtosSalvos];
-
-  // Filtros
   const fVerd  = document.getElementById('filter-veredicto')?.value || '';
   const fPlat  = document.getElementById('filter-plataforma')?.value || '';
   const fVend  = Number(document.getElementById('filter-vendas')?.value) || 0;
   const fScore = Number(document.getElementById('filter-score')?.value) || 0;
   const fBusca = (document.getElementById('filter-busca')?.value || '').toLowerCase();
 
-  if (fVerd)  dados = dados.filter(p => (fVerd === 'pendente' ? !p.veredicto : p.veredicto === fVerd));
-  if (fPlat)  dados = dados.filter(p => p.plataforma === fPlat);
+  if (fVerd)  dados = dados.filter(p => p.veredicto === fVerd);
+  if (fPlat)  dados = dados.filter(p => (p.plataforma || '').includes(fPlat));
   if (fVend)  dados = dados.filter(p => (p.vendasDia || 0) >= fVend);
   if (fScore) dados = dados.filter(p => Number(p.scoreTotal || 0) >= fScore);
   if (fBusca) dados = dados.filter(p => (p.nome || '').toLowerCase().includes(fBusca));
 
-  // Ordenação
   dados.sort((a, b) => {
-    if (sortKey === 'score')  return Number(b.scoreTotal || 0) - Number(a.scoreTotal || 0);
-    if (sortKey === 'vendas') return (b.vendasDia || 0) - (a.vendasDia || 0);
-    if (sortKey === 'margem') return (b.margemEstimada || 0) - (a.margemEstimada || 0);
-    return (b.salvoEm || '').localeCompare(a.salvoEm || ''); // data desc
+    if (sortKey === 'score')  return Number(b.scoreTotal||0) - Number(a.scoreTotal||0);
+    if (sortKey === 'vendas') return (b.vendasDia||0) - (a.vendasDia||0);
+    if (sortKey === 'margem') return (b.margemEstimada||0) - (a.margemEstimada||0);
+    return (b.salvoEm||'').localeCompare(a.salvoEm||'');
   });
 
   const countEl = document.getElementById('filter-count');
@@ -569,157 +763,130 @@ function renderProdutos() {
   }
 
   grid.innerHTML = dados.map(p => {
-    const veredicto = p.veredicto || 'pendente';
-    const score     = Number(p.scoreTotal || 0).toFixed(1);
+    const v     = p.veredicto || 'pendente';
+    const score = Number(p.scoreTotal||0).toFixed(1);
     return `
-    <div class="produto-card ${veredicto}" onclick="abrirModal('${p._id}')">
+    <div class="produto-card ${v}" onclick="abrirModal('${p._id}')">
       <div class="pc-header">
         <div class="pc-nome">${p.nome}</div>
-        <div class="pc-badge ${veredicto}">${p.veredicto || 'PENDENTE'}</div>
+        <div class="pc-badge ${v}">${p.veredicto||'PENDENTE'}</div>
       </div>
+      <div class="pc-nicho-tag">${p.nicho||p.categoria||'—'}</div>
       <div class="pc-stats">
         <div class="pc-stat"><div class="pc-stat-val">${score}</div><div class="pc-stat-lbl">Score IA</div></div>
-        <div class="pc-stat"><div class="pc-stat-val">${p.vendasDia || 0}</div><div class="pc-stat-lbl">Vendas/dia</div></div>
-        <div class="pc-stat"><div class="pc-stat-val">${p.margemEstimada || 0}%</div><div class="pc-stat-lbl">Margem Est.</div></div>
+        <div class="pc-stat"><div class="pc-stat-val">${p.vendasDia||0}</div><div class="pc-stat-lbl">Vendas/dia</div></div>
+        <div class="pc-stat"><div class="pc-stat-val">${p.margemMax||p.margemEstimada||0}%</div><div class="pc-stat-lbl">Margem</div></div>
       </div>
       <div class="pc-footer">
-        <span class="pc-plat">${p.plataforma || '—'}</span>
+        <span class="pc-plat">${p.plataforma||'—'}</span>
         <span class="pc-date">${formatDate(p.salvoEm)}</span>
-        <div class="pc-actions">
-          <button class="pc-btn" title="Excluir" onclick="event.stopPropagation();excluirProduto('${p._id}','${(p.nome||'').replace(/'/g,"\\'")}')">🗑</button>
-        </div>
+        <div class="pc-actions"><button class="pc-btn" title="Excluir" onclick="event.stopPropagation();excluirProduto('${p._id}','${(p.nome||'').replace(/'/g,"\\'")}')">🗑</button></div>
       </div>
     </div>`;
   }).join('');
 }
 
-// ── MODAL DETALHES ────────────────────────────────────
+// ── MODAL DETALHES ────────────────────────────────────────────
 window.abrirModal = function(id) {
   const p = produtosSalvos.find(x => x._id === id);
   if (!p) return;
-
-  const modal   = document.getElementById('produto-modal');
-  const content = document.getElementById('modal-content');
-
-  content.innerHTML = `
-    <button class="modal-close" onclick="fecharModal()">✕</button>
+  document.getElementById('modal-content').innerHTML = `
+    <button class="modal-close" onclick="fecharModal('produto-modal')">✕</button>
     <div class="modal-title">${p.nome}</div>
-    <div class="modal-sub">${p.plataforma} · ${p.categoria} · Salvo em ${formatDate(p.salvoEm)}</div>
-    <span class="verdict-badge ${p.veredicto || 'pendente'}" style="display:inline-block;margin-bottom:20px">${p.veredicto || 'PENDENTE'}</span>
-
+    <div class="modal-sub">${p.plataforma||''} · ${p.nicho||p.categoria||''} · Salvo em ${formatDate(p.salvoEm)}</div>
+    <span class="verdict-badge ${p.veredicto}" style="display:inline-block;margin-bottom:20px">${p.veredicto||'PENDENTE'}</span>
     <div class="modal-section">
       <div class="modal-section-title">Scores</div>
       <div class="modal-grid">
-        <div class="modal-stat"><div class="modal-stat-val" style="color:var(--accent)">${p.printabilidade || 0}</div><div class="modal-stat-lbl">Printabilidade</div></div>
-        <div class="modal-stat"><div class="modal-stat-val" style="color:var(--blue)">${p.oportunidade || 0}</div><div class="modal-stat-lbl">Oportunidade</div></div>
-        <div class="modal-stat"><div class="modal-stat-val" style="color:var(--yellow)">${p.saturacao || 0}</div><div class="modal-stat-lbl">Saturação</div></div>
+        <div class="modal-stat"><div class="modal-stat-val" style="color:var(--accent)">${p.printabilidade||0}</div><div class="modal-stat-lbl">Printabilidade</div></div>
+        <div class="modal-stat"><div class="modal-stat-val" style="color:var(--blue)">${p.oportunidade||0}</div><div class="modal-stat-lbl">Oportunidade</div></div>
+        <div class="modal-stat"><div class="modal-stat-val" style="color:var(--yellow)">${p.saturacao||0}</div><div class="modal-stat-lbl">Saturação</div></div>
       </div>
     </div>
-
     <div class="modal-section">
-      <div class="modal-section-title">Dados de Produção</div>
+      <div class="modal-section-title">Produção</div>
       <div class="modal-grid">
-        <div class="modal-stat"><div class="modal-stat-val">${p.materialPrincipal || '—'}</div><div class="modal-stat-lbl">Material</div></div>
-        <div class="modal-stat"><div class="modal-stat-val">${p.tempoImpressao || '—'}</div><div class="modal-stat-lbl">Tempo</div></div>
-        <div class="modal-stat"><div class="modal-stat-val">R$ ${(p.custoMin||0).toFixed(2)}</div><div class="modal-stat-lbl">Custo Mín.</div></div>
+        <div class="modal-stat"><div class="modal-stat-val">${p.materialPrincipal||'—'}</div><div class="modal-stat-lbl">Material</div></div>
+        <div class="modal-stat"><div class="modal-stat-val">${p.tempoImpressao||'—'}</div><div class="modal-stat-lbl">Tempo</div></div>
+        <div class="modal-stat"><div class="modal-stat-val">R$ ${(p.custoTotalMin||p.custoMin||0).toFixed(2)}</div><div class="modal-stat-lbl">Custo Mín.</div></div>
       </div>
     </div>
-
     <div class="modal-section">
       <div class="modal-section-title">Mercado</div>
       <div class="modal-grid">
-        <div class="modal-stat"><div class="modal-stat-val">R$ ${p.precoVenda || 0}</div><div class="modal-stat-lbl">Preço Venda</div></div>
-        <div class="modal-stat"><div class="modal-stat-val">${p.vendasDia || 0}/dia</div><div class="modal-stat-lbl">Vendas</div></div>
-        <div class="modal-stat"><div class="modal-stat-val">${p.margemEstimada || 0}%</div><div class="modal-stat-lbl">Margem Est.</div></div>
+        <div class="modal-stat"><div class="modal-stat-val">R$ ${p.precoMin||0}–${p.precoMax||0}</div><div class="modal-stat-lbl">Preço Mercado</div></div>
+        <div class="modal-stat"><div class="modal-stat-val">${p.vendasDia||0}/dia</div><div class="modal-stat-lbl">Vendas Est.</div></div>
+        <div class="modal-stat"><div class="modal-stat-val">${p.margemMax||p.margemEstimada||0}%</div><div class="modal-stat-lbl">Margem Máx.</div></div>
       </div>
     </div>
-
-    ${p.analise ? `
-    <div class="modal-section">
-      <div class="modal-section-title">Análise da IA</div>
-      <p style="font-size:13px;color:var(--text2);line-height:1.7">${p.analise}</p>
-    </div>` : ''}
-
-    ${p.keywords?.length ? `
-    <div class="modal-section">
-      <div class="modal-section-title">Keywords Shopee</div>
-      <div class="keywords-list">${p.keywords.map(k => `<span class="kw-tag">${k}</span>`).join('')}</div>
-    </div>` : ''}
+    ${p.analise ? `<div class="modal-section"><div class="modal-section-title">Análise da IA</div><p style="font-size:13px;color:var(--text2);line-height:1.7">${p.analise}</p></div>` : ''}
+    ${p.keywords?.length ? `<div class="modal-section"><div class="modal-section-title">Keywords</div><div class="keywords-list">${p.keywords.map(k=>`<span class="kw-tag">${k}</span>`).join('')}</div></div>` : ''}
   `;
-
-  modal.classList.remove('hidden');
+  document.getElementById('produto-modal').classList.remove('hidden');
 };
 
-window.fecharModal = function() {
-  document.getElementById('produto-modal').classList.add('hidden');
+window.fecharModal = function(id) {
+  document.getElementById(id)?.classList.add('hidden');
 };
 
-// ── EXCLUIR ───────────────────────────────────────────
+// ── EXCLUIR / LIMPAR ──────────────────────────────────────────
 window.excluirProduto = async function(id, nome) {
-  if (!confirm(`Excluir "${nome}" permanentemente?`)) return;
+  if (!confirm(`Excluir "${nome}"?`)) return;
   try {
     await psDB.collection('produtos').doc(id).delete();
     showToast('Produto excluído ✓');
-  } catch (e) {
-    showToast('Erro: ' + e.message, 'error');
-  }
+  } catch (e) { showToast('Erro: ' + e.message, 'error'); }
 };
-
 window.limparTodosDados = async function() {
-  if (!confirm('⚠️ Apagar TODOS os produtos? Esta ação é irreversível!')) return;
-  if (!confirm('Tem certeza absoluta? Todos os dados serão perdidos!')) return;
+  if (!confirm('⚠️ Apagar TODOS os seus produtos?')) return;
+  if (!confirm('Confirma? Ação irreversível!')) return;
   try {
-    const snap = await psDB.collection('produtos').get();
+    const snap  = await psDB.collection('produtos').where('usuario', '==', currentUser.email).get();
     const batch = psDB.batch();
     snap.docs.forEach(d => batch.delete(d.ref));
     await batch.commit();
-    showToast('Todos os produtos foram apagados', 'error');
-  } catch (e) {
-    showToast('Erro: ' + e.message, 'error');
-  }
+    showToast('Todos os produtos apagados', 'error');
+  } catch (e) { showToast('Erro: ' + e.message, 'error'); }
 };
 
-// ── UTILS ──────────────────────────────────────────────
+// ── CONFIGS ───────────────────────────────────────────────────
+window.salvarConfig = function() {
+  const v = document.getElementById('cfg-min-vendas').value;
+  const s = document.getElementById('cfg-min-score').value;
+  if (v) localStorage.setItem('ps_min_vendas', v);
+  if (s) localStorage.setItem('ps_min_score', s);
+  showToast('Configurações salvas ✓');
+};
+window.salvarCustos = function() {
+  [['cfg-filamento','ps_custo_fil'],['cfg-energia','ps_custo_energia'],['cfg-mao-obra','ps_custo_mao'],['cfg-margem-min','ps_margem_min']]
+    .forEach(([id, key]) => { const v = document.getElementById(id)?.value; if (v) localStorage.setItem(key, v); });
+  showToast('Custos salvos ✓');
+};
+function carregarConfigs() {
+  [['cfg-min-vendas','ps_min_vendas'],['cfg-min-score','ps_min_score'],['cfg-filamento','ps_custo_fil'],['cfg-energia','ps_custo_energia'],['cfg-mao-obra','ps_custo_mao'],['cfg-margem-min','ps_margem_min']]
+    .forEach(([id, key]) => { const el = document.getElementById(id); const v = localStorage.getItem(key); if (el && v) el.value = v; });
+}
+
+// ── UTILS ──────────────────────────────────────────────────────
 function formatDate(iso) {
   if (!iso) return '—';
-  const d = new Date(iso);
-  return d.toLocaleDateString('pt-BR');
+  return new Date(iso).toLocaleDateString('pt-BR');
 }
-
 function verdictClass(v) {
-  if (v === 'PRODUZIR') return 'verd-green';
-  if (v === 'AVALIAR')  return 'verd-yellow';
-  if (v === 'EVITAR')   return 'verd-red';
-  return '';
+  return v === 'PRODUZIR' ? 'verd-green' : v === 'AVALIAR' ? 'verd-yellow' : v === 'EVITAR' ? 'verd-red' : '';
 }
-
-window.showToast = function showToast(msg, type = 'success') {
+window.showToast = function(msg, type = 'success') {
   const el = document.getElementById('toast');
   el.textContent = msg;
-  el.className = 'toast show' + (type ? ' ' + type : '');
+  el.className = 'toast show ' + type;
   clearTimeout(el._t);
   el._t = setTimeout(() => { el.className = 'toast'; }, 3500);
 };
 
-// ── EVENTOS ───────────────────────────────────────────
-function setupEventListeners() {
-  // Fechar modal clicando fora
-  document.getElementById('produto-modal')?.addEventListener('click', function(e) {
-    if (e.target === this) fecharModal();
-  });
-
-  // Menu mobile
-  document.getElementById('menu-btn')?.addEventListener('click', () => {
-    document.getElementById('sidebar').classList.toggle('open');
-  });
-
-  // Fechar sidebar ao clicar fora (mobile)
-  document.getElementById('main')?.addEventListener('click', () => {
-    document.getElementById('sidebar').classList.remove('open');
-  });
-}
-
-// Expõe para o HTML
-window.switchTab    = window.switchTab;
-window.loginGoogle  = window.loginGoogle;
-window.logoutUser   = window.logoutUser;
+// Expõe funções globais usadas no HTML
+window.switchTab     = window.switchTab;
+window.buscarNicho   = window.buscarNicho;
+window.abrirAnalise  = window.abrirAnalise;
+window.salvarAnalise = window.salvarAnalise;
+window.fecharModal   = window.fecharModal;
+window.abrirModal    = window.abrirModal;

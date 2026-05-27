@@ -455,8 +455,11 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
       <span class="tab-icon">🛒</span> Pedidos
       <span class="badge-count" id="badge-pedidos-pendentes" style="display:none;background:var(--amber-dim);color:var(--amber);border-color:rgba(245,158,11,0.3)">0</span>
     </button>
-    <button class="nav-tab" data-tab="calculadora" onclick="switchTab('calculadora',this)"><span class="tab-icon">🧮</span> Calculadora</button>
+    <button class="nav-tab" onclick="switchTab('calculadora',this)"><span class="tab-icon">🧮</span> Calculadora</button>
     <button class="nav-tab" data-tab="historico" onclick="switchTab('historico',this)"><span class="tab-icon">📋</span> Histórico</button>
+    <button class="nav-tab" onclick="window.location.href='analisador/index.html'" style="margin-left:auto;border-color:rgba(245,158,11,0.35);color:#f59e0b">
+      <span class="tab-icon">🎯</span> Print Scout
+    </button>
   </nav>
 
   <main class="main">

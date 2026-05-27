@@ -1086,3 +1086,59 @@ textarea { resize: vertical; min-height: 80px; }
   .modal-grid { grid-template-columns: repeat(2, 1fr); }
   .scores-row { gap: 8px; }
 }
+/* ── GLM STUDIO LINK (sidebar) ── */
+.sidebar-glm-link {
+  padding: 12px 20px;
+  border-top: 1px solid var(--border);
+}
+.glm-link {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text3);
+  text-decoration: none;
+  font-size: 13px;
+  font-weight: 500;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  transition: all .15s;
+  border: 1px solid transparent;
+}
+.glm-link:hover {
+  color: var(--accent);
+  border-color: rgba(34,211,165,.3);
+  background: var(--green-bg);
+}
+
+/* ── GLM LINK no bottom nav mobile ── */
+@media (max-width: 768px) {
+  .sidebar-glm-link {
+    display: none;
+  }
+  .bottom-nav-glm {
+    position: fixed;
+    bottom: 60px;
+    right: 12px;
+    z-index: 150;
+  }
+  .bottom-nav-glm a {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--surface);
+    border: 1px solid var(--border2);
+    color: var(--text2);
+    text-decoration: none;
+    font-size: 12px;
+    font-weight: 500;
+    padding: 8px 14px;
+    border-radius: 99px;
+    box-shadow: 0 2px 12px rgba(0,0,0,.4);
+    transition: all .15s;
+  }
+  .bottom-nav-glm a:hover {
+    color: var(--accent);
+    border-color: var(--accent);
+  }
+}
+

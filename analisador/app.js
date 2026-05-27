@@ -1,38 +1,26 @@
 /* ═══════════════════════════════════════════════════════════
-   PRINT SCOUT — app.js
-   IA: Google Gemini (com fallback automático de modelos)
-   Fluxo: Busca por nicho → Selecionar produto → Análise profunda
+   PRINT SCOUT — app.js  v3
+   Fix: usa APENAS o modelo salvo; só faz fallback se ele falhar
    ═══════════════════════════════════════════════════════════ */
 
 // ── ESTADO GLOBAL ─────────────────────────────────────────────
-let currentUser    = null;
-let produtosSalvos = [];
-let sortKey        = 'data';
-let nichoSelecionado = '';
+let currentUser       = null;
+let produtosSalvos    = [];
+let sortKey           = 'data';
+let nichoSelecionado  = '';
 let plataformaSelecionada = 'Todas';
-let volumeMinimo = 0;
+let volumeMinimo      = 0;
 let produtoParaAnalise = null;
 
-// Modelos disponíveis — apenas versões estáveis e amplamente disponíveis
-const GEMINI_MODELS_BASE = [
+// Modelos de fallback — APENAS versões 2.x que existem na v1beta atual
+const GEMINI_FALLBACK_MODELS = [
   'gemini-2.0-flash',
   'gemini-2.0-flash-lite',
-  'gemini-1.5-flash',
 ];
-
-// Retorna a lista de modelos priorizando o que funcionou por último
-function getGeminiModels() {
-  const saved = localStorage.getItem('ps_working_model');
-  if (!saved) return GEMINI_MODELS_BASE;
-  // Coloca o modelo salvo em primeiro, remove duplicata do restante
-  const rest = GEMINI_MODELS_BASE.filter(m => m !== saved);
-  return [saved, ...rest];
-}
 
 // ── INIT ──────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
   setupEventListeners();
-
   psAuth.onAuthStateChanged(user => {
     if (user) {
       if (EMAILS_PERMITIDOS.includes(user.email)) {
@@ -63,7 +51,6 @@ function showApp(user) {
   const img = document.getElementById('user-photo-display');
   if (img && user.photoURL) img.src = user.photoURL;
 }
-
 window.loginGoogle = function() {
   const provider = new firebase.auth.GoogleAuthProvider();
   psAuth.signInWithPopup(provider).catch(e => showToast(e.message, 'error'));
@@ -74,15 +61,14 @@ window.logoutUser = function() { psAuth.signOut(); };
 function getApiKey() {
   return localStorage.getItem('ps_gemini_key') || '';
 }
-
 function sleep(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
+  return new Promise(r => setTimeout(r, ms));
 }
 
-// Tenta um modelo específico — retorna o JSON parseado ou lança erro
-async function tryGeminiModel(model, prompt, maxTokens) {
+// Faz uma única chamada a um modelo e retorna o objeto JSON parseado
+async function tryModel(model, prompt, maxTokens) {
   const apiKey = getApiKey();
-  const response = await fetch(
+  const res = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
     {
       method: 'POST',
@@ -98,105 +84,81 @@ async function tryGeminiModel(model, prompt, maxTokens) {
     }
   );
 
-  if (!response.ok) {
-    const err = await response.json().catch(() => ({}));
-    const status = response.status;
-    const msg = err.error?.message || `Erro HTTP ${status}`;
-    const error = new Error(msg);
-    error.status = status;
-    error.model = model;
-    throw error;
+  if (!res.ok) {
+    const errBody = await res.json().catch(() => ({}));
+    const e = new Error(errBody.error?.message || `HTTP ${res.status}`);
+    e.status = res.status;
+    throw e;
   }
 
-  const data = await response.json();
-  const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-  if (!text) throw new Error('Resposta vazia da IA. Tente novamente.');
+  const data = await res.json();
+  const raw  = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+  if (!raw) throw new Error('Resposta vazia da IA.');
 
-  // Remove blocos de código markdown caso o modelo os adicione mesmo com responseMimeType json
-  const clean = text.replace(/^```json\s*/i, '').replace(/\s*```$/, '').trim();
-
-  try {
-    return JSON.parse(clean);
-  } catch (parseErr) {
-    const error = new Error('Resposta da IA não é um JSON válido. Tente novamente.');
-    error.status = 'parse_error';
-    throw error;
-  }
+  // Remove blocos markdown que o modelo às vezes adiciona mesmo com responseMimeType json
+  const clean = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim();
+  return JSON.parse(clean);
 }
 
-// Função principal com fallback entre modelos e retry em 429
+// Chamada principal: tenta o modelo salvo primeiro; fallback apenas se falhar
 async function callGemini(prompt, maxTokens = 2048) {
   const apiKey = getApiKey();
   if (!apiKey) throw new Error('Configure sua chave Gemini gratuita em Configurações!');
 
-  const models = getGeminiModels();
-  let lastError = null;
+  // Monta lista: modelo salvo em primeiro, sem duplicatas
+  const saved  = localStorage.getItem('ps_working_model');
+  const models = saved
+    ? [saved, ...GEMINI_FALLBACK_MODELS.filter(m => m !== saved)]
+    : GEMINI_FALLBACK_MODELS;
+
+  let lastErr = null;
 
   for (const model of models) {
     try {
-      updateStatusLabel(`Tentando ${model}...`, 'checking');
-
-      const result = await tryGeminiModel(model, prompt, maxTokens);
-
-      // Sucesso: persiste o modelo que funcionou para priorizar nas próximas chamadas
+      updateStatusLabel(`Conectando (${model})…`, 'checking');
+      const result = await tryModel(model, prompt, maxTokens);
+      // Sucesso — persiste o modelo vencedor
       localStorage.setItem('ps_working_model', model);
       updateStatusLabel(`Gemini ✓ (${model})`, 'online');
       return result;
-
     } catch (e) {
-      lastError = e;
+      lastErr = e;
+      console.warn(`[PrintScout] ${model} falhou: ${e.status} — ${e.message}`);
 
       if (e.status === 400) {
-        // Chave inválida — não adianta tentar outros modelos
+        // Chave inválida — inutiliza tentar outros modelos
         updateStatusLabel('Chave inválida', 'offline');
         throw new Error('Chave API inválida. Verifique em Configurações (deve começar com "AIza").');
       }
 
       if (e.status === 429) {
-        // Rate limit: aguarda e tenta o próximo
-        console.warn(`[PrintScout] Rate limit em ${model}, aguardando 3s e tentando próximo...`);
-        updateStatusLabel(`${model} — limite, tentando próximo...`, 'checking');
-        await sleep(3000);
-        continue;
+        updateStatusLabel(`Limite atingido, aguardando…`, 'checking');
+        await sleep(4000);
+        // Continua para o próximo modelo
       }
 
-      if (e.status === 404 || (typeof e.message === 'string' && e.message.toLowerCase().includes('not found'))) {
-        // Modelo indisponível nesta conta/região — tenta o próximo imediatamente
-        // Se era o modelo salvo, limpa para não priorizar um modelo quebrado
-        if (localStorage.getItem('ps_working_model') === model) {
-          localStorage.removeItem('ps_working_model');
-        }
-        console.warn(`[PrintScout] Modelo ${model} não disponível (404), tentando próximo...`);
-        continue;
+      if (e.status === 404) {
+        // Modelo não existe nesta conta — se era o salvo, limpa
+        if (saved === model) localStorage.removeItem('ps_working_model');
+        // Continua para o próximo
       }
 
-      if (e.status === 'parse_error') {
-        // JSON inválido — pode ser instabilidade; tenta o próximo
-        console.warn(`[PrintScout] JSON inválido em ${model}, tentando próximo...`);
-        continue;
-      }
-
-      // Erro inesperado (rede, 500 etc.) — tenta o próximo
-      console.warn(`[PrintScout] Erro inesperado em ${model}: ${e.message}`);
-      continue;
+      // Para qualquer outro erro (500, rede, parse) também continua
     }
   }
 
-  // Todos os modelos falharam
   updateStatusLabel('Erro na API', 'offline');
 
-  if (lastError?.status === 429) {
+  if (lastErr?.status === 429) {
+    throw new Error('Limite de requisições atingido. Aguarde 1–2 min e tente novamente.');
+  }
+  if (lastErr?.status === 404) {
     throw new Error(
-      'Limite de requisições atingido em todos os modelos. ' +
-      'Aguarde 1–2 minutos e tente novamente. ' +
-      '(Cota gratuita: 15 req/min, 1 M tokens/dia)'
+      'Nenhum modelo Gemini disponível na sua chave. ' +
+      'Vá em Configurações → Testar Chave para diagnosticar.'
     );
   }
-
-  throw new Error(
-    lastError?.message ||
-    'Não foi possível conectar à IA. Verifique sua chave em Configurações.'
-  );
+  throw new Error(lastErr?.message || 'Não foi possível conectar à IA. Verifique sua chave.');
 }
 
 function updateStatusLabel(text, state) {
@@ -208,16 +170,16 @@ function updateStatusLabel(text, state) {
 }
 
 function verificarApiKey() {
-  const key = getApiKey();
-  const dot = document.getElementById('status-dot');
-  const lbl = document.getElementById('status-label');
+  const key   = getApiKey();
+  const dot   = document.getElementById('status-dot');
+  const lbl   = document.getElementById('status-label');
   if (!key) {
     dot.className = 'status-dot offline';
     lbl.textContent = 'Gemini não configurado';
   } else {
     dot.className = 'status-dot online';
-    const savedModel = localStorage.getItem('ps_working_model') || 'gemini-2.0-flash';
-    lbl.textContent = `Gemini configurado ✓ (${savedModel})`;
+    const m = localStorage.getItem('ps_working_model') || 'gemini-2.0-flash';
+    lbl.textContent = `Gemini configurado ✓ (${m})`;
   }
 }
 
@@ -228,34 +190,40 @@ window.salvarApiKey = function() {
     return;
   }
   localStorage.setItem('ps_gemini_key', key);
-  // Limpa modelo salvo para forçar novo teste de qual modelo funciona
-  localStorage.removeItem('ps_working_model');
+  localStorage.removeItem('ps_working_model'); // força re-detecção
   document.getElementById('cfg-api-key').value = '';
   const st = document.getElementById('cfg-key-status');
-  st.textContent = '✅ Chave Gemini salva! Agora vá em "Buscar Nicho".';
+  st.textContent = '✅ Chave salva! Clique em "Testar Chave" para detectar o melhor modelo.';
   st.className = 'cfg-status ok';
   st.classList.remove('hidden');
   verificarApiKey();
   showToast('Chave Gemini salva ✓', 'success');
 };
 
-// Diagnóstico: testa a chave contra todos os modelos da lista base
 window.testarChaveGemini = async function() {
   const key = getApiKey();
   if (!key) { showToast('Nenhuma chave configurada', 'error'); return; }
 
   const btn = document.getElementById('btn-testar-chave');
-  if (btn) { btn.disabled = true; btn.textContent = '⏳ Testando...'; }
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Testando…'; }
 
   const st = document.getElementById('cfg-key-status');
-  st.textContent = '⏳ Testando modelos disponíveis...';
+  st.textContent = '⏳ Testando modelos…';
   st.className = 'cfg-status ok';
   st.classList.remove('hidden');
 
-  const results = [];
-  let firstWorking = null;
+  // Modelos a testar — versões conhecidas como disponíveis
+  const toTest = [
+    'gemini-2.0-flash',
+    'gemini-2.0-flash-lite',
+    'gemini-1.5-flash',
+    'gemini-1.5-pro',
+  ];
 
-  for (const model of GEMINI_MODELS_BASE) {
+  const lines = [];
+  let firstOk = null;
+
+  for (const model of toTest) {
     try {
       const r = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`,
@@ -269,31 +237,37 @@ window.testarChaveGemini = async function() {
         }
       );
       if (r.ok) {
-        results.push(`✅ ${model}`);
-        if (!firstWorking) firstWorking = model;
+        lines.push(`✅ ${model} — disponível`);
+        if (!firstOk) firstOk = model;
       } else {
-        const e = await r.json().catch(() => ({}));
-        if (r.status === 429) {
-          results.push(`⏳ ${model} (limite ativo — disponível)`);
-          if (!firstWorking) firstWorking = model;
-        } else if (r.status === 404) {
-          results.push(`❌ ${model} (não disponível nesta conta)`);
+        const status = r.status;
+        if (status === 429) {
+          lines.push(`⏳ ${model} — limite ativo (disponível)`);
+          if (!firstOk) firstOk = model;
+        } else if (status === 404) {
+          lines.push(`❌ ${model} — não disponível nesta conta`);
+        } else if (status === 400) {
+          lines.push(`🔑 ${model} — chave inválida (erro 400)`);
+          firstOk = null;
+          break;
         } else {
-          results.push(`⚠️ ${model} (erro ${r.status})`);
+          lines.push(`⚠️ ${model} — erro ${status}`);
         }
       }
-    } catch(e) {
-      results.push(`❌ ${model} (falha de rede)`);
+    } catch (e) {
+      lines.push(`❌ ${model} — falha de rede`);
     }
   }
 
-  // Persiste o primeiro modelo que funcionou
-  if (firstWorking) {
-    localStorage.setItem('ps_working_model', firstWorking);
+  if (firstOk) {
+    localStorage.setItem('ps_working_model', firstOk);
+    lines.push(`\n→ Modelo padrão definido: ${firstOk}`);
+  } else {
+    lines.push('\n→ Nenhum modelo disponível. Verifique a chave.');
   }
 
-  st.innerHTML = results.join('<br>');
-  st.className = firstWorking ? 'cfg-status ok' : 'cfg-status err';
+  st.innerHTML = lines.join('<br>');
+  st.className = firstOk ? 'cfg-status ok' : 'cfg-status err';
   verificarApiKey();
   if (btn) { btn.disabled = false; btn.textContent = '🔍 Testar Chave'; }
 };
@@ -359,9 +333,9 @@ window.buscarNicho = async function() {
   }
 
   const foco       = document.getElementById('s-foco')?.value.trim() || '';
-  const custoFil   = localStorage.getItem('ps_custo_fil')    || '80';
+  const custoFil   = localStorage.getItem('ps_custo_fil')     || '80';
   const custoEnerg = localStorage.getItem('ps_custo_energia') || '1.50';
-  const custoMao   = localStorage.getItem('ps_custo_mao')    || '25';
+  const custoMao   = localStorage.getItem('ps_custo_mao')     || '25';
 
   setBuscarLoading(true);
 
@@ -377,7 +351,7 @@ ${foco ? 'Foco específico: ' + foco : ''}
 
 Custos do produtor:
 - Filamento: R$ ${custoFil}/kg
-- Energia: R$ ${custoEnerg}/hora  
+- Energia: R$ ${custoEnerg}/hora
 - Mão de obra: R$ ${custoMao}/hora
 
 Identifique os 12 produtos mais vendidos deste nicho no e-commerce brasileiro, priorizando produtos que POSSAM ser fabricados com impressora 3D FDM doméstica.
@@ -522,10 +496,10 @@ window.abrirAnalise = async function(index) {
   document.getElementById('analise-resultado').classList.add('hidden');
   document.getElementById('analise-modal').classList.remove('hidden');
 
-  const custoFil   = localStorage.getItem('ps_custo_fil')    || '80';
+  const custoFil   = localStorage.getItem('ps_custo_fil')     || '80';
   const custoEnerg = localStorage.getItem('ps_custo_energia') || '1.50';
-  const custoMao   = localStorage.getItem('ps_custo_mao')    || '25';
-  const margemMin  = localStorage.getItem('ps_margem_min')   || '40';
+  const custoMao   = localStorage.getItem('ps_custo_mao')     || '25';
+  const margemMin  = localStorage.getItem('ps_margem_min')    || '40';
 
   const prompt = `Você é um especialista em impressão 3D FDM e mercado e-commerce brasileiro.
 
@@ -544,7 +518,7 @@ PRINTABILIDADE PRÉVIA: ${produto.printabilidade}/10
 CUSTOS DO PRODUTOR:
 - Filamento: R$ ${custoFil}/kg
 - Energia: R$ ${custoEnerg}/hora
-- Mão de obra: R$ ${custoMao}/hora  
+- Mão de obra: R$ ${custoMao}/hora
 - Margem mínima aceitável: ${margemMin}%
 
 Retorne SOMENTE JSON válido:
@@ -831,10 +805,9 @@ function atualizarDashboard() {
   setBar('bar-avaliar',  avaliar);
   setBar('bar-evitar',   evitar);
 
-  const countMap = { produzir, avaliar, evitar };
-  Object.entries(countMap).forEach(([k, v]) => {
+  ['produzir','avaliar','evitar'].forEach(k => {
     const el = document.getElementById('count-' + k);
-    if (el) el.textContent = v;
+    if (el) el.textContent = { produzir, avaliar, evitar }[k];
   });
 
   const topDiv = document.getElementById('top-oportunidades');
@@ -1010,7 +983,7 @@ function carregarConfigs() {
     .forEach(([id, key]) => { const el = document.getElementById(id); const v = localStorage.getItem(key); if (el && v) el.value = v; });
 }
 
-// ── UTILS ──────────────────────────────────────────────────────
+// ── UTILS ─────────────────────────────────────────────────────
 function formatDate(iso) {
   if (!iso) return '—';
   return new Date(iso).toLocaleDateString('pt-BR');

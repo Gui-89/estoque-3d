@@ -1,550 +1,2665 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Print Scout — Radar de Produtos 3D</title>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎯</text></svg>" />
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;600&family=Syne:wght@700;800&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="style.css" />
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GLM Studio — Gestão 3D</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --neon:#00ffa3;--neon-dim:rgba(0,255,163,0.12);--neon-border:rgba(0,255,163,0.35);
+  --blue:#3b82f6;--blue-dim:rgba(59,130,246,0.12);--blue-border:rgba(59,130,246,0.35);
+  --amber:#f59e0b;--amber-dim:rgba(245,158,11,0.12);
+  --red:#ef4444;--red-dim:rgba(239,68,68,0.12);
+  --purple:#a855f7;--purple-dim:rgba(168,85,247,0.12);--purple-border:rgba(168,85,247,0.35);
+  --bg:#0a0a0f;--bg2:#111118;--bg3:#16161f;
+  --glass:rgba(255,255,255,0.04);--glass-border:rgba(255,255,255,0.07);
+  --text:#e8e8f0;--muted:#6b6b80;
+  --font-ui:'DM Sans',sans-serif;--font-mono:'Space Mono',monospace;
+  --r:10px;--r-lg:16px;
+}
+html{scroll-behavior:smooth}
+body{font-family:var(--font-ui);background:var(--bg);color:var(--text);min-height:100vh;line-height:1.6}
+::-webkit-scrollbar{width:6px}::-webkit-scrollbar-track{background:var(--bg2)}
+::-webkit-scrollbar-thumb{background:var(--neon-border);border-radius:3px}
+body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(rgba(0,255,163,0.03) 1px,transparent 1px),linear-gradient(90deg,rgba(0,255,163,0.03) 1px,transparent 1px);background-size:40px 40px;pointer-events:none;z-index:0}
+.screen{display:none;min-height:100vh}.screen.active{display:flex}
+
+/* LOGIN */
+#login-screen{align-items:center;justify-content:center;position:relative;z-index:1}
+.login-box{background:var(--bg2);border:1px solid var(--glass-border);border-radius:var(--r-lg);padding:48px 40px;width:100%;max-width:400px;text-align:center;position:relative}
+.login-box::before{content:'';position:absolute;top:-1px;left:10%;right:10%;height:2px;background:linear-gradient(90deg,transparent,var(--neon),transparent);border-radius:2px}
+.login-logo{font-family:var(--font-mono);font-size:13px;color:var(--neon);letter-spacing:4px;text-transform:uppercase;margin-bottom:8px}
+.login-box h2{font-size:26px;font-weight:600;margin-bottom:8px}
+.login-box p{color:var(--muted);font-size:14px;margin-bottom:32px}
+.login-btn{background:var(--glass);color:var(--text);border:1px solid var(--glass-border);padding:14px 24px;border-radius:var(--r);font-size:15px;font-weight:500;font-family:var(--font-ui);cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:10px;width:100%;transition:.2s}
+.login-btn:hover{border-color:var(--neon-border);background:var(--neon-dim)}
+
+/* APP SHELL */
+#app-screen{flex-direction:column;position:relative;z-index:1}
+.topbar{position:sticky;top:0;z-index:100;background:rgba(10,10,15,0.88);backdrop-filter:blur(14px);border-bottom:1px solid var(--glass-border);padding:0 24px;height:60px;display:flex;align-items:center;justify-content:space-between;gap:16px}
+.topbar-brand{font-family:var(--font-mono);font-size:13px;color:var(--neon);letter-spacing:3px;text-transform:uppercase;display:flex;align-items:center;gap:8px}
+.topbar-brand .dot{width:8px;height:8px;border-radius:50%;background:var(--neon);box-shadow:0 0 8px var(--neon);animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(.8)}}
+.user-chip{display:flex;align-items:center;gap:8px;background:var(--glass);border:1px solid var(--glass-border);padding:5px 10px 5px 5px;border-radius:100px}
+.user-chip img{width:28px;height:28px;border-radius:50%;border:1.5px solid var(--neon-border)}
+.user-chip span{font-size:13px;color:var(--muted);max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.logout-btn{background:transparent;color:var(--red);border:1px solid rgba(239,68,68,0.3);padding:5px 12px;border-radius:6px;font-size:12px;font-family:var(--font-ui);cursor:pointer;transition:.2s}
+.logout-btn:hover{background:var(--red-dim)}
+
+/* NAV TABS */
+.nav-tabs{display:flex;gap:4px;padding:10px 24px;background:var(--bg2);border-bottom:1px solid var(--glass-border);overflow-x:auto}
+.nav-tab{padding:8px 16px;border-radius:8px;border:none;background:transparent;color:var(--muted);font-family:var(--font-ui);font-size:13px;font-weight:500;cursor:pointer;transition:.2s;white-space:nowrap;display:flex;align-items:center;gap:6px}
+.nav-tab:hover{color:var(--text);background:var(--glass)}
+.nav-tab.active{color:var(--neon);background:var(--neon-dim)}
+.nav-tab .tab-icon{font-size:14px}
+
+/* MAIN */
+.main{max-width:980px;margin:0 auto;padding:24px 24px 60px;width:100%}
+.section{display:none}.section.active{display:block}
+
+/* DASHBOARD */
+.dash-header{margin-bottom:24px}
+.dash-header h2{font-size:22px;font-weight:600;margin-bottom:4px}
+.dash-header p{color:var(--muted);font-size:14px}
+.kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:14px;margin-bottom:24px}
+.kpi-card{background:var(--bg2);border:1px solid var(--glass-border);border-radius:var(--r-lg);padding:20px;position:relative;overflow:hidden;transition:.2s}
+.kpi-card:hover{border-color:var(--neon-border)}
+.kpi-card .kpi-accent{position:absolute;top:0;left:0;right:0;height:2px}
+.kpi-card .kpi-icon{font-size:20px;margin-bottom:12px}
+.kpi-card .kpi-label{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px}
+.kpi-card .kpi-value{font-family:var(--font-mono);font-size:26px;font-weight:700;line-height:1}
+.kpi-card .kpi-sub{font-size:12px;color:var(--muted);margin-top:6px}
+.kpi-neon .kpi-accent{background:linear-gradient(90deg,var(--neon),transparent)}.kpi-neon .kpi-value{color:var(--neon)}
+.kpi-blue .kpi-accent{background:linear-gradient(90deg,var(--blue),transparent)}.kpi-blue .kpi-value{color:var(--blue)}
+.kpi-amber .kpi-accent{background:linear-gradient(90deg,var(--amber),transparent)}.kpi-amber .kpi-value{color:var(--amber)}
+.kpi-red .kpi-accent{background:linear-gradient(90deg,var(--red),transparent)}.kpi-red .kpi-value{color:var(--red)}
+.kpi-purple .kpi-accent{background:linear-gradient(90deg,var(--purple),transparent)}.kpi-purple .kpi-value{color:var(--purple)}
+.dash-row{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px}
+@media(max-width:600px){.dash-row{grid-template-columns:1fr}}
+.dash-panel{background:var(--bg2);border:1px solid var(--glass-border);border-radius:var(--r-lg);padding:20px}
+.dash-panel h4{font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:16px;display:flex;align-items:center;gap:8px}
+.dash-panel h4::before{content:'';width:3px;height:12px;background:var(--neon);border-radius:2px}
+.alert-list{display:flex;flex-direction:column;gap:8px}
+.alert-item{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;font-size:13px;border:1px solid}
+.alert-item.danger{background:var(--red-dim);border-color:rgba(239,68,68,0.2);color:#fca5a5}
+.alert-item.warning{background:var(--amber-dim);border-color:rgba(245,158,11,0.2);color:#fcd34d}
+.alert-item.ok{background:var(--neon-dim);border-color:var(--neon-border);color:var(--neon)}
+.alert-empty{color:var(--muted);font-size:13px;text-align:center;padding:16px}
+
+/* BARRA FILTRO FILAMENTOS DASHBOARD */
+.dash-fil-search{width:100%;background:var(--bg3);border:1px solid var(--glass-border);border-radius:8px;padding:8px 12px;color:var(--text);font-family:var(--font-ui);font-size:13px;margin-bottom:14px;transition:.2s}
+.dash-fil-search:focus{outline:none;border-color:var(--neon-border)}
+
+.fil-bar-wrap{display:flex;flex-direction:column;gap:14px}
+.fil-bar-item{}
+.fil-bar-label{display:flex;justify-content:space-between;font-size:13px;margin-bottom:5px}
+.fil-bar-label .name{color:var(--text)}.fil-bar-label .qty{font-family:var(--font-mono);font-size:12px;color:var(--muted)}
+.fil-bar-track{height:8px;background:var(--glass-border);border-radius:4px;overflow:hidden}
+.fil-bar-fill{height:100%;border-radius:4px;background:linear-gradient(90deg,var(--neon),var(--blue));transition:width .5s ease}
+.fil-bar-fill.low{background:linear-gradient(90deg,var(--amber),var(--red))}
+.fil-bar-fill.esgotado{background:var(--red);opacity:.5}
+.fil-bar-meta{display:flex;justify-content:space-between;margin-top:4px;font-size:10px;color:var(--muted)}
+.fil-bar-meta .consumed{color:var(--amber);font-weight:600}
+.fil-bar-preco{font-size:10px;color:var(--muted);margin-top:2px}
+
+/* FORMS */
+.card-form{background:var(--bg2);border:1px solid var(--glass-border);border-radius:var(--r-lg);padding:24px;margin-bottom:20px;position:relative}
+.card-form h3{font-size:15px;font-weight:600;color:var(--neon);margin-bottom:20px;display:flex;align-items:center;gap:8px}
+.card-form h3 span{font-size:11px;font-weight:400;color:var(--muted);font-family:var(--font-mono)}
+.form-group{margin-bottom:14px}
+.form-group label{display:block;font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px}
+.form-group input,.form-group textarea,.form-group select{width:100%;background:var(--bg3);border:1px solid var(--glass-border);border-radius:8px;padding:10px 14px;color:var(--text);font-family:var(--font-ui);font-size:14px;transition:.2s;appearance:none}
+.form-group input:focus,.form-group textarea:focus,.form-group select:focus{outline:none;border-color:var(--neon-border);box-shadow:0 0 0 3px var(--neon-dim)}
+.form-group input::placeholder,.form-group textarea::placeholder{color:var(--muted)}
+.form-row{display:flex;gap:10px}.form-row .form-group{flex:1}
+.submit-btn{background:var(--neon);color:#0a0a0f;border:none;padding:12px 24px;border-radius:8px;font-family:var(--font-ui);font-size:14px;font-weight:600;cursor:pointer;width:100%;transition:.2s;letter-spacing:.5px}
+.submit-btn:hover{background:#00e690;transform:translateY(-1px)}.submit-btn:active{transform:translateY(0)}
+.unit-hint{font-size:11px;color:var(--muted);margin-top:4px;font-style:italic}
+.unit-hint strong{color:var(--amber)}
+
+/* RECEITA DE FILAMENTOS */
+.receita-row{display:flex;gap:6px;align-items:center;margin-bottom:6px;animation:fadeIn .2s ease}
+@keyframes fadeIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:translateY(0)}}
+.receita-row select.r-fil-select{flex:2;background:var(--bg3);border:1px solid var(--glass-border);border-radius:6px;padding:8px 10px;color:var(--text);font-size:13px;font-family:var(--font-ui);transition:.2s;appearance:none}
+.receita-row select.r-fil-select:focus{outline:none;border-color:var(--neon-border)}
+.receita-row .r-gramas{width:80px;flex-shrink:0;background:var(--bg3);border:1px solid var(--glass-border);border-radius:6px;padding:8px 10px;color:var(--neon);font-size:13px;font-family:var(--font-mono);text-align:right;transition:.2s}
+.receita-row .r-gramas:focus{outline:none;border-color:var(--neon-border)}
+.receita-row .r-custo-preview{font-size:11px;color:var(--amber);font-family:var(--font-mono);min-width:60px;text-align:right;flex-shrink:0}
+.receita-row .r-remove{background:var(--red-dim);color:var(--red);border:1px solid rgba(239,68,68,0.2);border-radius:6px;padding:6px 10px;cursor:pointer;font-size:12px;flex-shrink:0;transition:.2s}
+.receita-row .r-remove:hover{background:rgba(239,68,68,0.2)}
+.receita-total{font-size:12px;color:var(--neon);font-family:var(--font-mono);margin-top:8px;padding:6px 10px;background:var(--neon-dim);border:1px solid var(--neon-border);border-radius:6px;text-align:right}
+.receita-custo-total{font-size:12px;color:var(--amber);font-family:var(--font-mono);margin-top:4px;padding:6px 10px;background:var(--amber-dim);border:1px solid rgba(245,158,11,0.3);border-radius:6px;text-align:right;display:none}
+.receita-empty{font-size:13px;color:var(--muted);text-align:center;padding:12px;border:1px dashed var(--glass-border);border-radius:8px;margin-bottom:6px}
+.btn-add-receita{background:var(--bg3);color:var(--neon);border:1px dashed var(--neon-border);border-radius:8px;padding:8px 14px;font-size:12px;font-family:var(--font-ui);font-weight:600;cursor:pointer;width:100%;transition:.2s;margin-top:4px}
+.btn-add-receita:hover{background:var(--neon-dim)}
+
+/* SECTION HEADER & SEARCH */
+.section-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
+.section-header h3{font-size:16px;font-weight:600;display:flex;align-items:center;gap:8px}
+.badge-count{background:var(--neon-dim);color:var(--neon);border:1px solid var(--neon-border);padding:2px 8px;border-radius:100px;font-size:12px;font-family:var(--font-mono)}
+.search-bar{position:relative;margin-bottom:16px}
+.search-bar input{width:100%;background:var(--bg2);border:1px solid var(--glass-border);border-radius:8px;padding:10px 14px 10px 38px;color:var(--text);font-family:var(--font-ui);font-size:14px}
+.search-bar input:focus{outline:none;border-color:var(--neon-border)}
+.search-icon{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:15px}
+
+/* ITEM CARDS */
+.item-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px}
+.item-card{background:var(--bg2);border:1px solid var(--glass-border);border-radius:var(--r-lg);padding:18px;transition:.25s;position:relative;overflow:hidden}
+.item-card::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--neon);border-radius:3px 0 0 3px;transition:.25s}
+.item-card:hover{transform:translateY(-2px);box-shadow:0 8px 28px rgba(0,0,0,0.35);border-color:var(--neon-border)}
+.item-card.esgotado::before{background:var(--red)}.item-card.esgotado{opacity:.75}
+.item-card .item-name{font-size:15px;font-weight:600;margin-bottom:4px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.item-card .item-sub{font-size:12px;color:var(--muted);margin-bottom:12px}
+.item-card .item-qty{font-family:var(--font-mono);font-size:22px;font-weight:700;color:var(--neon);margin-bottom:4px}
+.item-card.esgotado .item-qty{color:var(--red)}
+.item-card .item-unit-info{font-size:11px;color:var(--muted);background:var(--bg3);border-radius:6px;padding:6px 10px;margin-bottom:8px;border-left:2px solid var(--neon-border)}
+.item-card .item-unit-info span{display:block;line-height:1.7}
+.item-price-info{font-size:11px;background:var(--bg3);border-radius:6px;padding:8px 10px;margin-bottom:8px;border-left:2px solid var(--blue-border);color:var(--muted)}
+.item-price-info span{display:block;line-height:1.8}
+.item-price-info .price-venda strong{color:var(--blue);font-size:12px}
+.item-price-info .price-custo strong{color:var(--amber)}
+.item-price-info .price-margem strong{color:var(--neon)}
+.item-card .card-actions{display:flex;gap:8px;flex-wrap:wrap}
+.btn-sm{padding:6px 12px;border-radius:6px;border:none;font-family:var(--font-ui);font-size:12px;font-weight:600;cursor:pointer;transition:.2s}
+.btn-edit{background:var(--amber-dim);color:var(--amber);border:1px solid rgba(245,158,11,0.2)}.btn-edit:hover{background:rgba(245,158,11,0.2)}
+.btn-delete{background:var(--red-dim);color:var(--red);border:1px solid rgba(239,68,68,0.2)}.btn-delete:hover{background:rgba(239,68,68,0.2)}
+.btn-calc{background:var(--blue-dim);color:var(--blue);border:1px solid var(--blue-border)}.btn-calc:hover{background:rgba(59,130,246,0.2)}
+.badge{display:inline-flex;align-items:center;padding:2px 8px;border-radius:100px;font-size:11px;font-weight:600;font-family:var(--font-mono);text-transform:uppercase;letter-spacing:.5px}
+.badge-esgotado{background:var(--red-dim);color:var(--red);border:1px solid rgba(239,68,68,0.25)}
+.badge-ok{background:var(--neon-dim);color:var(--neon);border:1px solid var(--neon-border)}
+.badge-low{background:var(--amber-dim);color:var(--amber);border:1px solid rgba(245,158,11,0.25)}
+.empty-state{text-align:center;padding:48px 24px;color:var(--muted);font-size:14px;grid-column:1/-1}
+.empty-state .empty-icon{font-size:36px;margin-bottom:12px}
+
+/* HOVER IMAGE PREVIEW */
+.prod-img-hover{max-height:0;overflow:hidden;transition:max-height .35s ease,opacity .3s ease,margin-top .3s ease;opacity:0;border-radius:8px;margin-top:0}
+.item-card:hover .prod-img-hover{max-height:180px;opacity:1;margin-top:10px}
+.prod-img-hover img{width:100%;border-radius:8px;object-fit:cover;max-height:170px;border:1px solid var(--neon-border);display:block}
+.prod-img-hover .img-link-preview{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;background:var(--bg3);border:1px dashed var(--glass-border);border-radius:8px;padding:14px;font-size:12px;color:var(--muted);text-align:center}
+.prod-img-hover .img-link-preview a{color:var(--blue);text-decoration:none;font-size:11px}
+.prod-img-hover .img-link-preview a:hover{text-decoration:underline}
+
+/* Receita mini on card */
+.receita-mini{font-size:10px;color:var(--muted);margin-top:4px;display:flex;flex-wrap:wrap;gap:4px}
+.receita-mini-tag{background:var(--bg3);border:1px solid var(--glass-border);border-radius:100px;padding:2px 7px;font-family:var(--font-mono)}
+
+/* MODAL */
+.modal-overlay{display:none;position:fixed;inset:0;z-index:200;background:rgba(0,0,0,0.75);backdrop-filter:blur(4px);align-items:center;justify-content:center;padding:16px}
+.modal-overlay.open{display:flex}
+.modal-box{background:var(--bg2);border:1px solid var(--glass-border);border-radius:var(--r-lg);padding:28px;width:100%;max-width:460px;position:relative;max-height:90vh;overflow-y:auto}
+.modal-box::before{content:'';position:absolute;top:-1px;left:10%;right:10%;height:2px;background:linear-gradient(90deg,transparent,var(--neon),transparent)}
+.modal-box h4{font-size:16px;font-weight:600;margin-bottom:20px}
+.modal-close{position:absolute;right:16px;top:16px;background:transparent;border:none;color:var(--muted);font-size:20px;cursor:pointer;transition:.2s}
+.modal-close:hover{color:var(--text)}
+.modal-box.wide{max-width:580px}
+
+/* TOAST */
+.toast-area{position:fixed;bottom:24px;right:24px;z-index:300;display:flex;flex-direction:column;gap:8px}
+.toast{background:var(--bg2);border:1px solid var(--neon-border);border-radius:8px;padding:12px 18px;font-size:13px;color:var(--neon);animation:toastIn .25s ease;max-width:300px}
+.toast.err{border-color:rgba(239,68,68,0.5);color:var(--red)}
+.toast.warn{border-color:rgba(245,158,11,0.5);color:var(--amber)}
+@keyframes toastIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+
+/* PEDIDOS */
+.status-filter-bar{display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap}
+.status-filter-btn{padding:6px 16px;border-radius:100px;border:1px solid var(--glass-border);background:transparent;color:var(--muted);font-family:var(--font-ui);font-size:13px;font-weight:500;cursor:pointer;transition:.2s;display:flex;align-items:center;gap:6px}
+.status-filter-btn:hover{color:var(--text);background:var(--glass)}
+.status-filter-btn.active-todos{color:var(--text);background:var(--glass);border-color:rgba(255,255,255,0.15)}
+.status-filter-btn.active-aguardando{color:var(--amber);background:var(--amber-dim);border-color:rgba(245,158,11,0.3)}
+.status-filter-btn.active-producao{color:var(--blue);background:var(--blue-dim);border-color:rgba(59,130,246,0.3)}
+.status-filter-btn.active-concluido{color:var(--neon);background:var(--neon-dim);border-color:var(--neon-border)}
+.status-dot{width:7px;height:7px;border-radius:50%;display:inline-block}
+.dot-aguardando{background:var(--amber);box-shadow:0 0 6px var(--amber)}
+.dot-producao{background:var(--blue);box-shadow:0 0 6px var(--blue)}
+.dot-concluido{background:var(--neon);box-shadow:0 0 6px var(--neon)}
+.pedido-list{display:flex;flex-direction:column;gap:12px}
+.pedido-card{background:var(--bg2);border:1px solid var(--glass-border);border-radius:var(--r-lg);overflow:hidden;transition:.2s;position:relative}
+.pedido-card:hover{box-shadow:0 6px 24px rgba(0,0,0,0.3)}
+.pedido-card::after{content:'';position:absolute;left:0;top:0;bottom:0;width:3px}
+.pedido-card.status-aguardando::after{background:var(--amber)}
+.pedido-card.status-producao::after{background:var(--blue)}
+.pedido-card.status-concluido::after{background:var(--neon);opacity:.6}
+.pedido-card.status-concluido{opacity:.8}
+.pedido-card-inner{padding:18px 20px 18px 24px;display:flex;gap:16px;align-items:flex-start}
+.status-toggle-wrap{display:flex;flex-direction:column;gap:6px;align-items:center;padding-top:2px;min-width:34px}
+.status-cycle-btn{width:32px;height:32px;border-radius:50%;border:2px solid;background:transparent;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:14px;transition:.2s;flex-shrink:0}
+.status-cycle-btn.s-aguardando{border-color:var(--amber);color:var(--amber)}.status-cycle-btn.s-aguardando:hover{background:var(--amber-dim)}
+.status-cycle-btn.s-producao{border-color:var(--blue);color:var(--blue)}.status-cycle-btn.s-producao:hover{background:var(--blue-dim)}
+.status-cycle-btn.s-concluido{border-color:var(--neon);color:var(--neon);background:var(--neon-dim)}.status-cycle-btn.s-concluido:hover{background:rgba(0,255,163,0.2)}
+.status-cycle-label{font-size:10px;font-family:var(--font-mono);color:var(--muted);text-align:center;line-height:1.2}
+.pedido-body{flex:1;min-width:0}
+.pedido-title{font-size:15px;font-weight:600;margin-bottom:3px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.pedido-cliente{font-size:12px;color:var(--muted);margin-bottom:10px}
+.pedido-meta{display:flex;gap:16px;flex-wrap:wrap;margin-bottom:12px}
+.pedido-meta-item{display:flex;align-items:center;gap:5px;font-size:12px;color:var(--muted)}
+.pedido-meta-item strong{color:var(--text);font-weight:500}
+.pedido-meta-item.overdue strong{color:var(--red)}
+.pedido-notes{font-size:13px;color:var(--muted);background:var(--bg3);border-radius:6px;padding:8px 12px;margin-bottom:10px;border-left:2px solid var(--glass-border);font-style:italic}
+.pedido-consumo{display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:var(--bg3);border:1px solid var(--glass-border);border-radius:8px;padding:8px 12px;margin-bottom:10px;font-size:12px}
+.pedido-consumo .consumo-item{display:flex;align-items:center;gap:4px;color:var(--muted)}
+.pedido-consumo .consumo-item strong{color:var(--text)}
+.pedido-consumo .consumo-divider{color:var(--glass-border)}
+/* LUCRO ESTIMADO NO PEDIDO */
+.pedido-lucro{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:100px;font-size:11px;font-weight:600;font-family:var(--font-mono);margin-left:6px}
+.pedido-lucro.bom{background:rgba(0,255,163,0.12);color:var(--neon);border:1px solid var(--neon-border)}
+.pedido-lucro.medio{background:var(--amber-dim);color:var(--amber);border:1px solid rgba(245,158,11,0.3)}
+.pedido-lucro.ruim{background:var(--red-dim);color:var(--red);border:1px solid rgba(239,68,68,0.25)}
+.consumo-preview{background:var(--bg3);border:1px solid var(--neon-border);border-radius:8px;padding:10px 14px;margin-top:8px;font-size:13px;display:none}
+.consumo-preview.visible{display:block}
+.consumo-preview .cp-row{display:flex;justify-content:space-between;margin-bottom:4px;color:var(--muted)}
+.consumo-preview .cp-row strong{color:var(--neon)}
+.consumo-preview .cp-warn{color:var(--red);font-size:12px;margin-top:6px}
+.consumo-preview .cp-ok{color:var(--neon);font-size:12px;margin-top:6px}
+.pedido-photo{width:100%;max-width:300px;border-radius:8px;margin-bottom:10px;object-fit:cover;max-height:180px;border:1px solid var(--glass-border)}
+.pedido-actions{display:flex;gap:8px;flex-wrap:wrap}
+.upload-area{border:1.5px dashed var(--glass-border);border-radius:8px;padding:14px;text-align:center;cursor:pointer;transition:.2s;margin-bottom:10px;position:relative}
+.upload-area:hover{border-color:var(--neon-border);background:var(--neon-dim)}
+.upload-area input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
+.upload-area .upload-label{font-size:13px;color:var(--muted);pointer-events:none}
+.upload-progress{height:4px;background:var(--glass-border);border-radius:2px;overflow:hidden;margin-top:6px;display:none}
+.upload-progress-fill{height:100%;background:linear-gradient(90deg,var(--neon),var(--blue));border-radius:2px;transition:width .3s}
+.prazo-ok{color:var(--neon)!important}.prazo-warn{color:var(--amber)!important}.prazo-over{color:var(--red)!important}
+.badge-aguardando{background:var(--amber-dim);color:var(--amber);border:1px solid rgba(245,158,11,0.25)}
+.badge-producao{background:var(--blue-dim);color:var(--blue);border:1px solid rgba(59,130,246,0.25)}
+.badge-concluido{background:var(--neon-dim);color:var(--neon);border:1px solid var(--neon-border)}
+.concluded-at{font-size:11px;color:var(--neon);font-family:var(--font-mono)}
+
+/* DEDUÇÃO MULTI-FILAMENTO */
+.deducao-info{background:var(--bg3);border:1px solid var(--neon-border);border-radius:10px;padding:14px 16px;margin-bottom:16px;font-size:13px;line-height:2}
+.deducao-info strong{color:var(--neon)}
+.deducao-grupo{margin-bottom:16px;border:1px solid var(--glass-border);border-radius:10px;overflow:hidden}
+.deducao-grupo-header{display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:rgba(59,130,246,0.07);border-bottom:1px solid var(--glass-border)}
+.deducao-grupo-title{font-weight:600;font-size:13px;color:var(--text)}
+.deducao-grupo-qty{font-family:var(--font-mono);font-size:12px;color:var(--blue);background:var(--blue-dim);padding:2px 8px;border-radius:100px;border:1px solid rgba(59,130,246,0.3)}
+.deducao-grupo .fil-select-list{padding:8px;display:flex;flex-direction:column;gap:6px;max-height:160px;overflow-y:auto}
+.fil-select-item{display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--bg3);border:2px solid var(--glass-border);border-radius:8px;cursor:pointer;transition:.2s}
+.fil-select-item:hover{border-color:var(--neon-border);background:var(--neon-dim)}
+.fil-select-item.selected{border-color:var(--neon);background:var(--neon-dim)}
+.fil-select-item.insufficient{opacity:.6;border-style:dashed}
+.fil-select-item .fs-name{font-weight:600;font-size:13px}
+.fil-select-item .fs-brand{font-size:11px;color:var(--muted)}
+.fil-select-item .fs-qty{font-family:var(--font-mono);font-size:12px}
+.fil-select-item.selected .fs-qty{color:var(--neon)}
+.skip-deducao-btn{width:100%;margin-top:8px;padding:10px;background:transparent;border:1px solid var(--glass-border);color:var(--muted);border-radius:8px;font-family:var(--font-ui);font-size:13px;cursor:pointer;transition:.2s}
+.skip-deducao-btn:hover{color:var(--amber)}
+
+/* HISTÓRICO */
+.historico-list{display:flex;flex-direction:column;gap:6px}
+.historico-item{display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:8px;font-size:12px;background:var(--bg3);border:1px solid var(--glass-border)}
+.historico-item .mov-icon{font-size:14px;flex-shrink:0}
+.historico-item .mov-info{flex:1;min-width:0}
+.historico-item .mov-desc{color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.historico-item .mov-date{color:var(--muted);font-size:11px;font-family:var(--font-mono)}
+.historico-item .mov-qty{font-family:var(--font-mono);font-size:12px;font-weight:700;flex-shrink:0}
+.historico-item .mov-qty.saida{color:var(--red)}.historico-item .mov-qty.entrada{color:var(--neon)}
+.pedido-mini{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--glass-border)}
+.pedido-mini:last-child{border-bottom:none}
+.pedido-mini-info{flex:1;min-width:0}
+.pedido-mini-name{font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pedido-mini-date{font-size:11px;color:var(--muted);font-family:var(--font-mono)}
+
+/* CALCULADORA */
+.calc-price-display{text-align:center;padding:28px 24px;background:var(--bg2);border:1px solid var(--glass-border);border-radius:var(--r-lg);margin-bottom:20px;position:relative}
+.calc-price-display::before{content:'';position:absolute;top:-1px;left:10%;right:10%;height:2px;background:linear-gradient(90deg,transparent,var(--neon),transparent)}
+.calc-price-label{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:12px}
+.calc-price-wrap{position:relative;display:inline-block;width:100%;max-width:340px}
+#calc-preco{font-size:46px;font-weight:700;text-align:center;width:100%;padding:10px 48px 10px 10px;border:none;border-radius:12px;background:var(--bg3);color:var(--neon);outline:none;font-family:var(--font-mono)}
+.calc-copy-btn{position:absolute;right:12px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;font-size:20px;opacity:.45;color:var(--text);transition:.2s}
+.calc-copy-btn:hover{opacity:1;transform:translateY(-50%) scale(1.15)}
+.calc-profit-badge{display:inline-block;margin-top:12px;padding:5px 18px;border-radius:20px;font-size:13px;font-weight:600;transition:.3s}
+.cpb-good{background:var(--neon-dim);color:var(--neon);border:1px solid var(--neon-border)}
+.cpb-warn{background:var(--amber-dim);color:var(--amber);border:1px solid rgba(245,158,11,0.3)}
+.cpb-bad{background:var(--red-dim);color:var(--red);border:1px solid rgba(239,68,68,0.3)}
+.cpb-neutral{background:var(--glass);color:var(--muted);border:1px solid var(--glass-border)}
+.calc-preset-row{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.calc-preset-btn{padding:5px 12px;border-radius:8px;font-size:12px;font-weight:600;background:var(--bg3);color:var(--muted);border:1px solid var(--glass-border);cursor:pointer;transition:.2s;font-family:var(--font-ui)}
+.calc-preset-btn:hover{background:var(--neon-dim);color:var(--neon);border-color:var(--neon-border)}
+.calc-action-col{display:flex;flex-direction:column;gap:10px;margin-bottom:24px}
+.calc-action-row{display:flex;gap:10px}
+.calc-reset-btn{background:var(--glass);border:1px solid var(--glass-border);color:var(--text);padding:12px 20px;border-radius:8px;font-family:var(--font-ui);font-size:14px;cursor:pointer;transition:.2s}
+.calc-reset-btn:hover{background:var(--bg3)}
+.calc-save-btn{background:var(--blue);color:#fff;border:none;padding:12px 24px;border-radius:8px;font-family:var(--font-ui);font-size:14px;font-weight:600;cursor:pointer;width:100%;transition:.2s;display:flex;align-items:center;justify-content:center;gap:8px}
+.calc-save-btn:hover{background:#2563eb;transform:translateY(-1px)}
+.calc-editing-notice{background:var(--blue-dim);border:1px solid rgba(59,130,246,0.3);color:var(--blue);border-radius:8px;padding:10px 14px;font-size:12px;text-align:center}
+.calc-metric{display:flex;justify-content:space-between;align-items:center;padding:7px 0;font-size:14px;border-bottom:1px solid rgba(255,255,255,0.03)}
+.calc-metric:last-child{border-bottom:none}
+.calc-metric .cv{color:var(--neon);font-family:var(--font-mono);font-size:13px}
+.calc-metric .cv.neg{color:var(--red)}.calc-metric .cv.warn{color:var(--amber)}
+.calc-result-box{background:var(--neon-dim);border:1px solid var(--neon-border);border-radius:8px;padding:12px 14px;margin-top:10px}
+.calc-margem-table{width:100%;border-collapse:collapse;font-size:13px}
+.calc-margem-table th{text-align:left;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;padding:8px 6px;font-weight:400}
+.calc-margem-table td{padding:8px 6px;border-top:1px solid rgba(255,255,255,0.04)}
+.calc-margem-table tr.hl{background:rgba(0,255,163,0.06)}
+.calc-margem-table tr.hl td{color:var(--neon)}
+.calc-margem-table .price-td{font-weight:600}
+.calc-pct-good{color:var(--neon)}.calc-pct-warn{color:var(--amber)}.calc-pct-bad{color:var(--red)}
+
+/* CALC RECEITA */
+.calc-receita-header{display:grid;grid-template-columns:1fr 80px 80px 60px 28px;gap:6px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;padding:0 0 4px 0;border-bottom:1px solid var(--glass-border);margin-bottom:6px}
+.calc-receita-row{display:grid;grid-template-columns:1fr 80px 80px 60px 28px;gap:6px;align-items:center;margin-bottom:6px;animation:fadeIn .2s ease}
+.calc-receita-row select{background:var(--bg3);border:1px solid var(--glass-border);border-radius:6px;padding:8px 10px;color:var(--text);font-size:13px;font-family:var(--font-ui);transition:.2s;appearance:none}
+.calc-receita-row select:focus{outline:none;border-color:var(--neon-border)}
+.calc-receita-row input[type=number]{background:var(--bg3);border:1px solid var(--glass-border);border-radius:6px;padding:8px 10px;color:var(--neon);font-size:13px;font-family:var(--font-mono);transition:.2s;text-align:right;width:100%}
+.calc-receita-row input[type=number]:focus{outline:none;border-color:var(--neon-border)}
+.calc-receita-row .r-custo-fil{font-size:12px;color:var(--amber);font-family:var(--font-mono);text-align:right}
+.calc-receita-row .r-rem-btn{background:var(--red-dim);color:var(--red);border:1px solid rgba(239,68,68,0.2);border-radius:6px;padding:6px 8px;cursor:pointer;font-size:11px;transition:.2s}
+.calc-receita-row .r-rem-btn:hover{background:rgba(239,68,68,0.2)}
+.calc-receita-total-box{background:var(--amber-dim);border:1px solid rgba(245,158,11,0.3);border-radius:8px;padding:10px 14px;margin-top:4px;font-size:12px;display:flex;justify-content:space-between;align-items:center}
+.calc-receita-total-box .ct-label{color:var(--muted)}
+.calc-receita-total-box .ct-val{font-family:var(--font-mono);color:var(--amber);font-weight:700}
+.info-box{background:var(--bg3);border-left:3px solid var(--neon);border-radius:0 8px 8px 0;padding:10px 14px;font-size:13px;color:var(--muted);margin-bottom:16px}
+.info-box strong{color:var(--neon)}
+
+/* Pricing info in product edit modal */
+.pricing-readonly{background:var(--blue-dim);border:1px solid rgba(59,130,246,0.3);border-radius:8px;padding:12px 14px;margin-bottom:16px;font-size:13px}
+.pricing-readonly .pr-title{font-size:11px;color:var(--blue);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;font-weight:600}
+.pricing-readonly .pr-row{display:flex;justify-content:space-between;color:var(--muted);margin-bottom:4px}
+.pricing-readonly .pr-row strong{color:var(--text)}
+.pricing-readonly .pr-note{font-size:11px;color:var(--muted);margin-top:8px;border-top:1px solid rgba(59,130,246,0.2);padding-top:8px}
+
+/* PAGAMENTO */
+.pagamento-badge{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:100px;font-size:11px;font-weight:600;font-family:var(--font-mono)}
+.pagamento-pago{background:var(--neon-dim);color:var(--neon);border:1px solid var(--neon-border)}
+.pagamento-parcial{background:var(--amber-dim);color:var(--amber);border:1px solid rgba(245,158,11,0.3)}
+.pagamento-pendente{background:var(--red-dim);color:var(--red);border:1px solid rgba(239,68,68,0.25)}
+.pagamento-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+
+/* FILTRO PERÍODO */
+.periodo-filter-row{display:flex;gap:8px;align-items:center;margin-bottom:16px;flex-wrap:wrap}
+.periodo-filter-row label{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;white-space:nowrap}
+.periodo-filter-row input[type=month]{background:var(--bg2);border:1px solid var(--glass-border);border-radius:8px;padding:7px 12px;color:var(--text);font-family:var(--font-ui);font-size:13px;transition:.2s}
+.periodo-filter-row input[type=month]:focus{outline:none;border-color:var(--neon-border)}
+.periodo-clear-btn{padding:7px 14px;border-radius:8px;border:1px solid var(--glass-border);background:transparent;color:var(--muted);font-size:12px;font-family:var(--font-ui);cursor:pointer;transition:.2s}
+.periodo-clear-btn:hover{color:var(--text);background:var(--glass)}
+
+/* CHART FATURAMENTO */
+.dash-chart-panel{background:var(--bg2);border:1px solid var(--glass-border);border-radius:var(--r-lg);padding:20px;margin-bottom:24px}
+.dash-chart-panel h4{font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;gap:8px}
+.dash-chart-panel h4::before{content:'';width:3px;height:12px;background:var(--neon);border-radius:2px;flex-shrink:0}
+.dash-chart-panel h4 span{font-size:11px;color:var(--muted);font-family:var(--font-mono);font-weight:400}
+.chart-summary-row{display:flex;gap:20px;flex-wrap:wrap;margin-top:14px;padding-top:14px;border-top:1px solid var(--glass-border)}
+.chart-summary-item{font-size:12px;color:var(--muted)}
+.chart-summary-item strong{display:block;font-size:16px;font-family:var(--font-mono);margin-top:2px}
+.chart-summary-item.green strong{color:var(--neon)}
+.chart-summary-item.amber strong{color:var(--amber)}
+.chart-summary-item.blue strong{color:var(--blue)}
+.chart-summary-item.purple strong{color:var(--purple)}
+
+/* RECALCULAR CUSTO */
+.btn-recalcular{background:rgba(59,130,246,0.08);color:var(--blue);border:1px solid rgba(59,130,246,0.3);padding:5px 10px;border-radius:6px;font-size:11px;font-family:var(--font-ui);font-weight:600;cursor:pointer;transition:.2s;white-space:nowrap}
+.btn-recalcular:hover{background:var(--blue-dim)}
+.btn-recalcular.desatualizado{background:var(--amber-dim);color:var(--amber);border-color:rgba(245,158,11,0.35)}
+
+/* MODAL PAGAMENTO */
+.pagamento-modal-row{display:flex;gap:10px;align-items:flex-end}
+.radio-group{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:4px}
+.radio-opt{display:flex;align-items:center;gap:6px;padding:7px 12px;border-radius:8px;border:1px solid var(--glass-border);background:var(--bg3);cursor:pointer;transition:.2s;font-size:13px}
+.radio-opt input[type=radio]{accent-color:var(--neon)}
+.radio-opt:has(input:checked){border-color:var(--neon-border);background:var(--neon-dim)}
+
+/* KPI EXTRA */
+.kpi-card.kpi-green .kpi-accent{background:linear-gradient(90deg,#22c55e,transparent)}
+.kpi-card.kpi-green .kpi-value{color:#22c55e}
+.kpi-card.kpi-teal .kpi-accent{background:linear-gradient(90deg,#14b8a6,transparent)}
+.kpi-card.kpi-teal .kpi-value{color:#14b8a6}
+
+@media(max-width:480px){
+  .main{padding:14px 12px 60px}.topbar{padding:0 14px}.nav-tabs{padding:8px 12px}
+  .kpi-grid{grid-template-columns:1fr 1fr}.item-grid{grid-template-columns:1fr}
+  .user-chip span{display:none}.pedido-card-inner{flex-direction:column}
+  .status-toggle-wrap{flex-direction:row;min-width:auto}
+  #calc-preco{font-size:34px}
+  .calc-receita-header,.calc-receita-row{grid-template-columns:1fr 70px 60px 50px 28px}
+  .periodo-filter-row{gap:6px}
+}
+</style>
 </head>
 <body>
 
-  <!-- SIDEBAR -->
-  <aside class="sidebar" id="sidebar">
-    <div class="sidebar-logo">
-      <span class="logo-icon">◈</span>
-      <span class="logo-text">Print<strong>Scout</strong></span>
-    </div>
-
-    <nav class="sidebar-nav">
-      <button class="nav-item active" data-tab="dashboard">
-        <span class="nav-icon">⬡</span>
-        <span>Dashboard</span>
-      </button>
-      <button class="nav-item" data-tab="analisar">
-        <span class="nav-icon">◎</span>
-        <span>Analisar Produto</span>
-      </button>
-      <button class="nav-item" data-tab="produtos">
-        <span class="nav-icon">◫</span>
-        <span>Meus Produtos</span>
-      </button>
-      <button class="nav-item" data-tab="config">
-        <span class="nav-icon">◈</span>
-        <span>Configurações</span>
-      </button>
-    </nav>
-
-    <div class="sidebar-footer">
-      <div class="api-status" id="api-status">
-        <span class="status-dot" id="status-dot"></span>
-        <span id="status-label">Verificando...</span>
-      </div>
-    </div>
-  </aside>
-
-  <!-- MOBILE TOP BAR -->
-  <div class="mobile-topbar">
-    <span class="logo-text">◈ Print<strong>Scout</strong></span>
-    <button class="menu-btn" id="menu-btn">☰</button>
+<!-- LOGIN -->
+<div id="login-screen" class="screen active">
+  <div class="login-box">
+    <div class="login-logo">GLM Studio</div>
+    <h2>Gestão 3D ☁️</h2>
+    <p>Estoque + Calculadora unificados em tempo real.</p>
+    <button class="login-btn" id="btn-login-google">
+      <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google" width="18">
+      Entrar com o Google
+    </button>
   </div>
+</div>
 
-  <!-- MAIN CONTENT -->
-  <main class="main" id="main">
-
-    <!-- ══ TAB: DASHBOARD ══ -->
-    <div class="tab-content active" id="tab-dashboard">
-      <div class="page-header">
-        <div>
-          <h1>Radar de Oportunidades</h1>
-          <p class="page-sub">Produtos analisados com potencial para impressão 3D</p>
-        </div>
-        <button class="btn-primary" onclick="switchTab('analisar')">+ Analisar Novo</button>
+<!-- APP -->
+<div id="app-screen" class="screen">
+  <header class="topbar">
+    <div class="topbar-brand"><span class="dot"></span>GLM Studio</div>
+    <div style="display:flex;align-items:center;gap:10px">
+      <div class="user-chip">
+        <img id="user-photo" src="" alt="">
+        <span id="user-name">Usuário</span>
       </div>
+      <button class="logout-btn" id="btn-logout">Sair</button>
+    </div>
+  </header>
 
+  <nav class="nav-tabs">
+    <button class="nav-tab active" data-tab="dashboard" onclick="switchTab('dashboard',this)"><span class="tab-icon">⬡</span> Dashboard</button>
+    <button class="nav-tab" data-tab="filamentos" onclick="switchTab('filamentos',this)"><span class="tab-icon">🧵</span> Filamentos</button>
+    <button class="nav-tab" data-tab="produtos" onclick="switchTab('produtos',this)"><span class="tab-icon">📦</span> Produtos</button>
+    <button class="nav-tab" data-tab="pedidos" onclick="switchTab('pedidos',this)" id="tab-pedidos">
+      <span class="tab-icon">🛒</span> Pedidos
+      <span class="badge-count" id="badge-pedidos-pendentes" style="display:none;background:var(--amber-dim);color:var(--amber);border-color:rgba(245,158,11,0.3)">0</span>
+    </button>
+    <button class="nav-tab" data-tab="calculadora" onclick="switchTab('calculadora',this)"><span class="tab-icon">🧮</span> Calculadora</button>
+    <button class="nav-tab" data-tab="historico" onclick="switchTab('historico',this)"><span class="tab-icon">📋</span> Histórico</button>
+  </nav>
+
+  <main class="main">
+
+    <!-- DASHBOARD -->
+    <div id="dashboard" class="section active">
+      <div class="dash-header"><h2>Visão Geral</h2><p>Resumo em tempo real do seu estúdio 3D</p></div>
       <div class="kpi-grid">
-        <div class="kpi-card">
-          <div class="kpi-value" id="kpi-total">—</div>
-          <div class="kpi-label">Produtos Analisados</div>
-          <div class="kpi-sub" id="kpi-total-sub">aguardando dados</div>
-        </div>
-        <div class="kpi-card kpi-green">
-          <div class="kpi-value" id="kpi-produzir">—</div>
-          <div class="kpi-label">Aprovados p/ Produzir</div>
-          <div class="kpi-sub" id="kpi-produzir-sub">alta oportunidade</div>
-        </div>
-        <div class="kpi-card kpi-yellow">
-          <div class="kpi-value" id="kpi-vendas">—</div>
-          <div class="kpi-label">Vendas/dia (média)</div>
-          <div class="kpi-sub" id="kpi-vendas-sub">dos produtos salvos</div>
-        </div>
-        <div class="kpi-card kpi-blue">
-          <div class="kpi-value" id="kpi-score">—</div>
-          <div class="kpi-label">Score Médio IA</div>
-          <div class="kpi-sub" id="kpi-score-sub">oportunidade de mercado</div>
+        <div class="kpi-card kpi-neon"><div class="kpi-accent"></div><div class="kpi-icon">🧵</div><div class="kpi-label">Filamentos</div><div class="kpi-value" id="kpi-fil-total">—</div><div class="kpi-sub" id="kpi-fil-sub">carregando...</div></div>
+        <div class="kpi-card kpi-blue"><div class="kpi-accent"></div><div class="kpi-icon">📦</div><div class="kpi-label">Produtos</div><div class="kpi-value" id="kpi-prod-total">—</div><div class="kpi-sub" id="kpi-prod-sub">carregando...</div></div>
+        <div class="kpi-card kpi-purple"><div class="kpi-accent"></div><div class="kpi-icon">🛒</div><div class="kpi-label">Pedidos Abertos</div><div class="kpi-value" id="kpi-ped-abertos">—</div><div class="kpi-sub" id="kpi-ped-sub">carregando...</div></div>
+        <div class="kpi-card kpi-amber"><div class="kpi-accent"></div><div class="kpi-icon">⚠️</div><div class="kpi-label">Alertas</div><div class="kpi-value" id="kpi-alertas">—</div><div class="kpi-sub">esgotados + críticos</div></div>
+        <div class="kpi-card kpi-red"><div class="kpi-accent"></div><div class="kpi-icon">🔴</div><div class="kpi-label">Esgotados</div><div class="kpi-value" id="kpi-esgotados">—</div><div class="kpi-sub">fil. + produtos</div></div>
+        <div class="kpi-card kpi-green"><div class="kpi-accent"></div><div class="kpi-icon">💰</div><div class="kpi-label">Faturado (mês)</div><div class="kpi-value" id="kpi-faturado-mes">—</div><div class="kpi-sub" id="kpi-faturado-sub">pedidos concluídos</div></div>
+        <div class="kpi-card kpi-teal"><div class="kpi-accent"></div><div class="kpi-icon">📈</div><div class="kpi-label">Lucro Est. (mês)</div><div class="kpi-value" id="kpi-lucro-mes">—</div><div class="kpi-sub" id="kpi-lucro-sub">venda − custo</div></div>
+        <div class="kpi-card kpi-blue"><div class="kpi-accent"></div><div class="kpi-icon">⏱️</div><div class="kpi-label">Em Prod. (semana)</div><div class="kpi-value" id="kpi-tempo-semana">—</div><div class="kpi-sub" id="kpi-tempo-semana-sub">tempo total</div></div>
+      </div>
+
+      <!-- GRÁFICO FATURAMENTO -->
+      <div class="dash-chart-panel">
+        <h4><span style="display:flex;align-items:center;gap:8px"><span style="width:3px;height:12px;background:var(--neon);border-radius:2px;display:inline-block"></span>Faturamento Mensal</span><span id="dash-chart-ano">—</span></h4>
+        <canvas id="dash-faturamento-chart" style="max-height:180px"></canvas>
+        <div class="chart-summary-row">
+          <div class="chart-summary-item green"><span>Melhor mês</span><strong id="chart-melhor-mes">—</strong></div>
+          <div class="chart-summary-item amber"><span>Média mensal</span><strong id="chart-media-mes">—</strong></div>
+          <div class="chart-summary-item blue"><span>Total no ano</span><strong id="chart-total-ano">—</strong></div>
+          <div class="chart-summary-item purple"><span>Lucro est. ano</span><strong id="chart-lucro-ano">—</strong></div>
         </div>
       </div>
 
-      <div class="section-row">
-        <div class="section-half">
-          <div class="section-header">
-            <h2>🏆 Top Oportunidades</h2>
-            <span class="badge-pill">por score</span>
+      <div class="dash-row">
+        <div class="dash-panel"><h4>Alertas de Estoque</h4><div class="alert-list" id="dash-alertas"><div class="alert-empty">Carregando...</div></div></div>
+        <div class="dash-panel">
+          <h4>Consumo de Filamentos</h4>
+          <!-- NOVO: campo de busca inline nas barras -->
+          <input class="dash-fil-search" id="dash-fil-search-input" type="text" placeholder="🔍 Filtrar filamento..." oninput="filtrarDashFil()">
+          <div class="fil-bar-wrap" id="dash-fil-bars"><div class="alert-empty">Carregando...</div></div>
+        </div>
+      </div>
+      <div class="dash-row">
+        <div class="dash-panel"><h4>Pedidos em Andamento</h4><div id="dash-pedidos-andamento"><div class="alert-empty">Carregando...</div></div></div>
+        <div class="dash-panel"><h4>Próximas Entregas</h4><div id="dash-proximas-entregas"><div class="alert-empty">Carregando...</div></div></div>
+      </div>
+      <div class="dash-panel" style="margin-bottom:16px"><h4>Produtos com Estoque Crítico</h4><div class="item-grid" id="dash-prod-criticos" style="margin-top:8px"><div class="alert-empty">Carregando...</div></div></div>
+    </div>
+
+    <!-- FILAMENTOS -->
+    <div id="filamentos" class="section">
+      <div class="card-form">
+        <h3>Adicionar Filamento <span>/ cadastro</span></h3>
+        <form id="form-filamento">
+          <div class="form-row">
+            <div class="form-group"><label>Marca</label><input type="text" id="fil-marca" required placeholder="Ex: Esun, Voolt3D"></div>
+            <div class="form-group"><label>Cor</label><input type="text" id="fil-cor" required placeholder="Ex: Preto Fosco"></div>
           </div>
-          <div id="top-oportunidades">
-            <div class="empty-state">
-              <div class="empty-icon">◎</div>
-              <p>Nenhum produto analisado ainda.</p>
-              <button class="btn-ghost" onclick="switchTab('analisar')">Analisar primeiro produto →</button>
+          <div class="form-row">
+            <div class="form-group" style="flex:2"><label>Quantidade</label><input type="number" step="any" id="fil-qtd" required placeholder="Ex: 850"></div>
+            <div class="form-group"><label>Unidade</label><select id="fil-unidade"><option value="g">g</option><option value="kg">kg</option></select></div>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label>Preço por kg (R$) *</label><input type="number" step="0.01" id="fil-preco-kg" required placeholder="Ex: 89.90"><div class="unit-hint">⚠️ Essencial para calcular custo de produção</div></div>
+            <div class="form-group"><label>Tipo / Material</label><input type="text" id="fil-tipo" placeholder="Ex: PLA, PETG, ABS"></div>
+          </div>
+          <button type="submit" class="submit-btn">+ Salvar Filamento</button>
+        </form>
+      </div>
+      <div class="section-header"><h3>Estoque Atual <span class="badge-count" id="count-fil">0</span></h3></div>
+      <div class="search-bar"><span class="search-icon">🔍</span><input type="text" id="search-fil" placeholder="Buscar por marca ou cor..." oninput="filtrarLista('filamentos')"></div>
+      <div class="item-grid" id="lista-filamentos"><div class="empty-state"><div class="empty-icon">🧵</div>Nenhum filamento cadastrado.</div></div>
+    </div>
+
+    <!-- PRODUTOS -->
+    <div id="produtos" class="section">
+      <div class="card-form">
+        <h3>Cadastrar Produto <span>/ especificações unitárias</span></h3>
+        <div class="info-box">ℹ️ Para precificação completa use a aba <strong>🧮 Calculadora</strong> — ela salva automaticamente aqui com custo real por filamento.</div>
+        <form id="form-produto">
+          <div class="form-group"><label>Nome do Produto</label><input type="text" id="prod-nome" required placeholder="Ex: Vaso Decorativo Geométrico"></div>
+          <div class="form-group"><label>Descrição</label><textarea id="prod-desc" rows="2" placeholder="Detalhes..."></textarea></div>
+          <div class="form-row">
+            <div class="form-group"><label>Quantidade em Estoque</label><input type="number" id="prod-qtd" required placeholder="Ex: 5" min="0"></div>
+            <div class="form-group"><label>Tempo de Impressão (un.)</label><input type="text" id="prod-tempo" required placeholder="Ex: 2h 30m"><div class="unit-hint">⏱️ Por <strong>1 unidade</strong></div></div>
+          </div>
+          <div class="form-group">
+            <label>🎨 Receita de Filamentos (por unidade)</label>
+            <div id="add-receita-list"></div>
+            <div class="receita-empty" id="add-receita-empty">Nenhuma cor adicionada. Clique abaixo para adicionar.</div>
+            <div class="receita-total" id="add-receita-total" style="display:none">Total: 0g</div>
+            <div class="receita-custo-total" id="add-receita-custo" style="display:none">Custo material: R$ 0,00</div>
+            <button type="button" class="btn-add-receita" onclick="adicionarReceitaRow('add')">+ Adicionar Filamento / Cor</button>
+            <div class="unit-hint" style="margin-top:6px">⚖️ Selecione o filamento do estoque e informe os gramas por unidade</div>
+          </div>
+          <div class="form-group"><label>URL da Imagem / MakerWorld (Opcional)</label><input type="url" id="prod-img" placeholder="https://makerworld.com/..."></div>
+          <button type="submit" class="submit-btn">+ Salvar Produto</button>
+        </form>
+      </div>
+      <div class="section-header"><h3>Produtos Cadastrados <span class="badge-count" id="count-prod">0</span></h3></div>
+      <div class="search-bar"><span class="search-icon">🔍</span><input type="text" id="search-prod" placeholder="Buscar por nome ou descrição..." oninput="filtrarLista('produtos')"></div>
+      <div class="item-grid" id="lista-produtos"><div class="empty-state"><div class="empty-icon">📦</div>Nenhum produto cadastrado.</div></div>
+    </div>
+
+    <!-- PEDIDOS -->
+    <div id="pedidos" class="section">
+      <div class="card-form">
+        <h3>Novo Pedido <span>/ cadastro</span></h3>
+        <form id="form-pedido">
+          <div class="form-row">
+            <div class="form-group" style="flex:2"><label>Nome do Cliente</label><input type="text" id="ped-cliente" required placeholder="Ex: Maria Souza"></div>
+            <div class="form-group"><label>Prioridade</label><select id="ped-prioridade"><option value="normal">Normal</option><option value="alta">Alta ⚡</option><option value="baixa">Baixa</option></select></div>
+          </div>
+          <div class="form-group">
+            <label>Produto (catálogo)</label>
+            <select id="ped-produto-id" onchange="onProdutoSelecionado()"><option value="">— Selecionar produto —</option></select>
+            <div style="font-size:11px;color:var(--muted);margin-top:4px">Ou descreva abaixo se for produto personalizado</div>
+          </div>
+          <div id="wrap-qtd-pedido" style="display:none">
+            <div class="form-row">
+              <div class="form-group"><label>Quantidade pedida</label><input type="number" id="ped-qtd" min="1" value="1" oninput="atualizarConsumoPrevio()"><div class="unit-hint">Unidades que o cliente está comprando</div></div>
             </div>
+            <div class="consumo-preview" id="consumo-preview">
+              <div style="font-size:12px;color:var(--neon);font-weight:600;margin-bottom:8px">📊 Impacto no Estoque</div>
+              <div class="cp-row"><span>Produto:</span><strong id="cp-produto-nome">—</strong></div>
+              <div class="cp-row"><span>Qtd pedida:</span><strong id="cp-qtd">—</strong></div>
+              <div class="cp-row"><span>Filamento total:</span><strong id="cp-filamento">—</strong></div>
+              <div class="cp-row"><span>Tempo total:</span><strong id="cp-tempo">—</strong></div>
+              <div class="cp-row"><span>Estoque atual:</span><strong id="cp-estoque-atual">—</strong></div>
+              <div class="cp-row"><span>Estoque após:</span><strong id="cp-estoque-apos">—</strong></div>
+              <div id="cp-msg" class="cp-ok"></div>
+            </div>
+          </div>
+          <div class="form-group"><label>Descrição do Pedido</label><textarea id="ped-desc" rows="2" placeholder="Cor desejada, tamanho, customizações..."></textarea></div>
+          <div class="form-row">
+            <div class="form-group"><label>Data do Pedido</label><input type="date" id="ped-data-pedido" required></div>
+            <div class="form-group"><label>Previsão de Entrega</label><input type="date" id="ped-data-entrega" required></div>
+          </div>
+          <div class="form-group"><label>Observações internas</label><textarea id="ped-obs" rows="2" placeholder="Endereço, pagamento..."></textarea></div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Status do Pagamento</label>
+              <select id="ped-pagamento-status">
+                <option value="pendente">💳 Pendente</option>
+                <option value="parcial">⚡ Parcial</option>
+                <option value="pago">✅ Pago</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Valor Pago (R$)</label>
+              <input type="number" id="ped-valor-pago" min="0" step="0.01" placeholder="0,00">
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Forma de Pagamento</label>
+            <select id="ped-forma-pagamento">
+              <option value="">— Selecionar —</option>
+              <option value="pix">PIX</option>
+              <option value="dinheiro">Dinheiro</option>
+              <option value="cartao_credito">Cartão de Crédito</option>
+              <option value="cartao_debito">Cartão de Débito</option>
+              <option value="transferencia">Transferência</option>
+              <option value="outro">Outro</option>
+            </select>
+          </div>
+          <button type="submit" class="submit-btn">+ Registrar Pedido</button>
+        </form>
+      </div>
+      <div class="section-header"><h3>Pedidos <span class="badge-count" id="count-ped">0</span></h3></div>
+      <div class="status-filter-bar" id="status-filter-bar">
+        <button class="status-filter-btn active-todos" onclick="filtrarPedidos('todos',this)">Todos</button>
+        <button class="status-filter-btn" onclick="filtrarPedidos('aguardando',this)"><span class="status-dot dot-aguardando"></span> Aguardando</button>
+        <button class="status-filter-btn" onclick="filtrarPedidos('producao',this)"><span class="status-dot dot-producao"></span> Em Produção</button>
+        <button class="status-filter-btn" onclick="filtrarPedidos('concluido',this)"><span class="status-dot dot-concluido"></span> Concluído</button>
+        <button class="status-filter-btn" onclick="filtrarPedidos('pago',this)" style="border-color:rgba(0,255,163,0.2)"><span class="status-dot" style="background:var(--neon)"></span> Pagos</button>
+        <button class="status-filter-btn" onclick="filtrarPedidos('pendente_pag',this)" style="border-color:rgba(239,68,68,0.2)"><span class="status-dot" style="background:var(--red)"></span> Ag. Pagto</button>
+      </div>
+      <div class="periodo-filter-row">
+        <label>📅 Período:</label>
+        <input type="month" id="filtro-periodo" onchange="filtrarPedidosBusca()">
+        <button class="periodo-clear-btn" onclick="document.getElementById('filtro-periodo').value='';filtrarPedidosBusca()">✕ Limpar</button>
+        <span id="periodo-resumo" style="font-size:12px;color:var(--muted);font-family:var(--font-mono)"></span>
+      </div>
+      <div class="search-bar"><span class="search-icon">🔍</span><input type="text" id="search-ped" placeholder="Buscar por cliente ou produto..." oninput="filtrarPedidosBusca()"></div>
+      <div class="pedido-list" id="lista-pedidos"><div class="empty-state"><div class="empty-icon">🛒</div>Nenhum pedido cadastrado.</div></div>
+    </div>
+
+    <!-- CALCULADORA -->
+    <div id="calculadora" class="section">
+      <div class="dash-header">
+        <h2>🧮 Calculadora de Preço</h2>
+        <p>Precifique com custo real por filamento e salve direto no estoque</p>
+      </div>
+      <div class="calc-price-display">
+        <div class="calc-price-label">Preço Sugerido (editável)</div>
+        <div class="calc-price-wrap">
+          <input type="number" id="calc-preco" value="0" oninput="calcAtualizarResumo()">
+          <button class="calc-copy-btn" onclick="calcCopiarPreco()" title="Copiar preço">📋</button>
+        </div>
+        <div id="calc-profit-badge" class="calc-profit-badge cpb-neutral">—</div>
+      </div>
+
+      <div class="card-form">
+        <h3>Identificação <span>/ produto</span></h3>
+        <div class="form-group"><label>Nome do Produto *</label><input type="text" id="calc-nome" placeholder="Ex: Luminária Geométrica 20cm"></div>
+        <div class="form-group"><label>Descrição (Opcional)</label><textarea id="calc-desc" rows="2" placeholder="Material, tamanho, detalhes..."></textarea></div>
+        <div class="form-group">
+          <label>URL da Imagem / MakerWorld (Opcional)</label>
+          <input type="url" id="calc-img-url" placeholder="https://makerworld.com/...">
+          <div class="unit-hint">🌐 Cole o link do MakerWorld, Thingiverse, etc. — sem precisar baixar imagem</div>
+        </div>
+      </div>
+
+      <div class="card-form">
+        <h3>🎨 Filamentos Utilizados <span>/ custo real por cor</span></h3>
+        <div class="info-box">Selecione cada filamento do seu estoque e informe os gramas usados por unidade. O custo é calculado automaticamente com base no <strong>preço/kg cadastrado</strong>.</div>
+        <div class="calc-receita-header">
+          <span>Filamento</span><span style="text-align:right">Gramas</span><span style="text-align:right">Preço/kg</span><span style="text-align:right">Custo</span><span></span>
+        </div>
+        <div id="calc-receita-list"></div>
+        <div class="receita-empty" id="calc-receita-empty">Nenhum filamento adicionado.</div>
+        <div class="calc-receita-total-box" id="calc-receita-total-box" style="display:none">
+          <span class="ct-label">💰 Custo total de material (por unidade):</span>
+          <span class="ct-val" id="calc-receita-custo-total">R$ 0,00</span>
+        </div>
+        <button type="button" class="btn-add-receita" onclick="calcAdicionarReceitaRow()" style="margin-top:10px">+ Adicionar Filamento</button>
+      </div>
+
+      <div class="card-form">
+        <h3>Custos Adicionais <span>/ por unidade</span></h3>
+        <div class="form-row">
+          <div class="form-group"><label>Tempo de Impressão (h)</label><input type="number" id="calc-tempo" min="0" step="0.1" placeholder="Ex: 2.5" oninput="calcAuto()"></div>
+          <div class="form-group"><label>Potência da Impressora (W)</label><input type="number" id="calc-potencia" min="0" placeholder="Ex: 200" oninput="calcAuto()"></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label>Tarifa de Energia (R$/kWh)</label><input type="number" id="calc-energia" value="0.97" min="0" oninput="calcAuto()"></div>
+          <div class="form-group"><label>Perda / Rejeito (%)</label><input type="number" id="calc-perda" value="0" min="0" oninput="calcAuto()"></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label>Valor da Máquina (R$)</label><input type="number" id="calc-maquina" value="2000" oninput="calcAuto()"></div>
+          <div class="form-group"><label>Vida Útil (horas)</label><input type="number" id="calc-vida" value="5000" oninput="calcAuto()"></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label>Embalagem (R$)</label><input type="number" id="calc-embalagem" value="0" min="0" oninput="calcAuto()"></div>
+          <div class="form-group"><label>Mão de Obra (R$)</label><input type="number" id="calc-mao" value="0" min="0" oninput="calcAuto()"></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label>Outros Custos (R$)</label><input type="number" id="calc-outros" value="0" min="0" oninput="calcAuto()"></div>
+          <div class="form-group"><label>Manutenção (R$)</label><input type="number" id="calc-manut" value="0" min="0" oninput="calcAuto()"></div>
+        </div>
+      </div>
+
+      <div class="card-form">
+        <h3>Precificação <span>/ margem e taxas</span></h3>
+        <div class="form-group">
+          <label>Margem de Lucro (%)</label>
+          <input type="number" id="calc-margem" value="100" min="0" oninput="calcAuto()">
+          <div class="calc-preset-row">
+            <button class="calc-preset-btn" onclick="calcSetMargem(0)">Custo</button>
+            <button class="calc-preset-btn" onclick="calcSetMargem(30)">Atacado 30%</button>
+            <button class="calc-preset-btn" onclick="calcSetMargem(80)">Varejo 80%</button>
+            <button class="calc-preset-btn" onclick="calcSetMargem(150)">Premium 150%</button>
           </div>
         </div>
-
-        <div class="section-half">
-          <div class="section-header">
-            <h2>📊 Por Veredicto</h2>
-            <span class="badge-pill">distribuição</span>
-          </div>
-          <div class="verdict-chart" id="verdict-chart">
-            <div class="verdict-bar-wrap">
-              <span class="verdict-label verd-green">PRODUZIR</span>
-              <div class="verdict-track"><div class="verdict-fill fill-green" id="bar-produzir" style="width:0%"></div></div>
-              <span class="verdict-count" id="count-produzir">0</span>
-            </div>
-            <div class="verdict-bar-wrap">
-              <span class="verdict-label verd-yellow">AVALIAR</span>
-              <div class="verdict-track"><div class="verdict-fill fill-yellow" id="bar-avaliar" style="width:0%"></div></div>
-              <span class="verdict-count" id="count-avaliar">0</span>
-            </div>
-            <div class="verdict-bar-wrap">
-              <span class="verdict-label verd-red">EVITAR</span>
-              <div class="verdict-track"><div class="verdict-fill fill-red" id="bar-evitar" style="width:0%"></div></div>
-              <span class="verdict-count" id="count-evitar">0</span>
-            </div>
-            <div class="verdict-bar-wrap">
-              <span class="verdict-label" style="color:#64748b">PENDENTE</span>
-              <div class="verdict-track"><div class="verdict-fill" id="bar-pendente" style="width:0%;background:#334155"></div></div>
-              <span class="verdict-count" id="count-pendente">0</span>
-            </div>
-          </div>
-
-          <div class="section-header" style="margin-top:28px">
-            <h2>🕐 Recentes</h2>
-          </div>
-          <div id="recentes-list">
-            <div class="empty-mini">Nenhum produto ainda</div>
-          </div>
+        <div class="form-row">
+          <div class="form-group"><label>Taxa Marketplace (%)</label><input type="number" id="calc-taxa-perc" value="0" min="0" oninput="calcAuto()"></div>
+          <div class="form-group"><label>Taxa Fixa (R$)</label><input type="number" id="calc-taxa-fixa" value="0" min="0" oninput="calcAuto()"></div>
         </div>
+      </div>
+
+      <div class="calc-action-col">
+        <div class="calc-action-row">
+          <button class="submit-btn" onclick="calcularPreco()" style="flex:2">⚙️ Calcular</button>
+          <button class="calc-reset-btn" onclick="resetarCalc()">Reset</button>
+        </div>
+        <button class="calc-save-btn" onclick="salvarCalculadoraNoFirebase()">
+          <span>💾</span> Salvar no Estoque (Firebase)
+        </button>
+        <div id="calc-editing-notice" class="calc-editing-notice" style="display:none">✏️ Editando produto existente — Salvar irá atualizar os dados de precificação</div>
+      </div>
+
+      <div class="card-form" id="calc-results-card" style="display:none">
+        <h3>Resultado <span>/ detalhamento</span></h3>
+        <div class="calc-metric"><span>Material (filamentos)</span><span class="cv" id="calc-r-material">R$ 0,00</span></div>
+        <div class="calc-metric"><span>Energia elétrica</span><span class="cv" id="calc-r-energia">R$ 0,00</span></div>
+        <div class="calc-metric"><span>Depreciação da máquina</span><span class="cv" id="calc-r-depreciacao">R$ 0,00</span></div>
+        <div class="calc-metric"><span>Perdas / rejeitos</span><span class="cv" id="calc-r-perda">R$ 0,00</span></div>
+        <div class="calc-metric" style="border-top:1px solid var(--glass-border);padding-top:8px;margin-top:4px"><span><strong>Subtotal Custos</strong></span><span class="cv" id="calc-r-subtotal">R$ 0,00</span></div>
+        <div id="calc-taxas-row" style="display:none"><div class="calc-metric"><span>Taxas Marketplace</span><span class="cv warn" id="calc-r-taxas">R$ 0,00</span></div></div>
+        <div class="calc-result-box">
+          <div class="calc-metric" style="border:none;padding:0"><span><strong>Custo Total</strong></span><span class="cv" id="calc-r-custo-total">R$ 0,00</span></div>
+        </div>
+        <div class="calc-metric" style="margin-top:8px"><span>Lucro Líquido (por unidade)</span><span class="cv" id="calc-r-lucro">R$ 0,00</span></div>
+      </div>
+
+      <div class="card-form" id="calc-chart-card" style="display:none">
+        <h3>Composição dos Custos <span>/ gráfico</span></h3>
+        <canvas id="calc-chart" style="max-width:220px;max-height:220px;margin:0 auto;display:block"></canvas>
+      </div>
+
+      <div class="card-form" id="calc-margem-card" style="display:none">
+        <h3>Tabela de Preços <span>/ por margem</span></h3>
+        <table class="calc-margem-table">
+          <thead><tr><th>Margem</th><th>Preço de Venda</th><th>Lucro R$</th><th>Lucro %</th></tr></thead>
+          <tbody id="calc-margem-body"></tbody>
+        </table>
       </div>
     </div>
 
-    <!-- ══ TAB: ANALISAR ══ -->
-    <div class="tab-content" id="tab-analisar">
-      <div class="page-header">
-        <div>
-          <h1>Analisar Produto</h1>
-          <p class="page-sub">IA avalia viabilidade de produção 3D e potencial de mercado</p>
-        </div>
-      </div>
-
-      <div class="analyze-layout">
-        <!-- FORM -->
-        <div class="analyze-form-wrap">
-          <div class="form-card">
-            <div class="form-section-title">📦 Dados do Produto</div>
-
-            <div class="field-group">
-              <label>Nome do Produto *</label>
-              <input type="text" id="f-nome" placeholder="Ex: Suporte de celular para bicicleta" maxlength="120" />
-            </div>
-
-            <div class="field-row">
-              <div class="field-group">
-                <label>Plataforma *</label>
-                <select id="f-plataforma">
-                  <option value="Shopee">Shopee</option>
-                  <option value="TikTok Shop">TikTok Shop</option>
-                  <option value="Mercado Livre">Mercado Livre</option>
-                  <option value="Amazon">Amazon</option>
-                </select>
-              </div>
-              <div class="field-group">
-                <label>Categoria</label>
-                <select id="f-categoria">
-                  <option value="Casa e Organização">Casa e Organização</option>
-                  <option value="Eletrônicos / Acessórios">Eletrônicos / Acessórios</option>
-                  <option value="Automotivo">Automotivo</option>
-                  <option value="Pets">Pets</option>
-                  <option value="Infantil / Brinquedos">Infantil / Brinquedos</option>
-                  <option value="Escritório">Escritório</option>
-                  <option value="Cozinha">Cozinha</option>
-                  <option value="Saúde / Fitness">Saúde / Fitness</option>
-                  <option value="Decoração">Decoração</option>
-                  <option value="Ferramentas">Ferramentas</option>
-                  <option value="Games / Hobbies">Games / Hobbies</option>
-                  <option value="Outro">Outro</option>
-                </select>
-              </div>
-            </div>
-
-            <div class="field-row">
-              <div class="field-group">
-                <label>Preço de Venda (R$) *</label>
-                <input type="number" id="f-preco" placeholder="29.90" min="0" step="0.01" />
-              </div>
-              <div class="field-group">
-                <label>Vendas Estimadas / Dia *</label>
-                <input type="number" id="f-vendas" placeholder="500" min="0" />
-              </div>
-            </div>
-
-            <div class="field-row">
-              <div class="field-group">
-                <label>Nº de Concorrentes</label>
-                <input type="number" id="f-concorrentes" placeholder="50" min="0" />
-              </div>
-              <div class="field-group">
-                <label>Avaliação Média (★)</label>
-                <input type="number" id="f-avaliacao" placeholder="4.5" min="0" max="5" step="0.1" />
-              </div>
-            </div>
-
-            <div class="field-group">
-              <label>URL do Produto (opcional)</label>
-              <input type="url" id="f-url" placeholder="https://shopee.com.br/produto..." />
-            </div>
-
-            <div class="field-group">
-              <label>Descrição / Observações</label>
-              <textarea id="f-descricao" rows="3" placeholder="Descreva o produto: material aparente, dimensões, partes móveis, complexidade visual..."></textarea>
-            </div>
-
-            <div id="form-error" class="form-error hidden"></div>
-
-            <button class="btn-analyze" id="btn-analyze" onclick="analisarProduto()">
-              <span id="analyze-btn-text">◎ Analisar com IA</span>
-              <span id="analyze-loader" class="hidden">⏳ Analisando...</span>
-            </button>
-
-            <p class="form-note">* Campos obrigatórios. Quanto mais detalhes, melhor a análise.</p>
-          </div>
-        </div>
-
-        <!-- RESULT PANEL -->
-        <div class="result-wrap" id="result-wrap">
-          <!-- Estado inicial -->
-          <div class="result-placeholder" id="result-placeholder">
-            <div class="placeholder-icon">◎</div>
-            <h3>Pronto para analisar</h3>
-            <p>Preencha os dados do produto e clique em <strong>Analisar com IA</strong>. A inteligência artificial vai avaliar:</p>
-            <ul class="placeholder-list">
-              <li>✓ Viabilidade de impressão 3D</li>
-              <li>✓ Material e custo estimados</li>
-              <li>✓ Tempo de impressão</li>
-              <li>✓ Margem de lucro projetada</li>
-              <li>✓ Nível de concorrência</li>
-              <li>✓ Score de oportunidade</li>
-              <li>✓ Veredicto: Produzir / Avaliar / Evitar</li>
-            </ul>
-          </div>
-
-          <!-- Resultado real -->
-          <div class="result-card hidden" id="result-card">
-            <!-- Header do resultado -->
-            <div class="result-header">
-              <div class="result-produto-nome" id="res-nome">—</div>
-              <div class="verdict-badge" id="res-veredicto-badge">—</div>
-            </div>
-
-            <!-- Scores principais -->
-            <div class="scores-row">
-              <div class="score-circle-wrap">
-                <svg class="score-circle" viewBox="0 0 80 80">
-                  <circle class="track" cx="40" cy="40" r="34"/>
-                  <circle class="fill print-fill" cx="40" cy="40" r="34" id="circle-print" style="stroke-dashoffset:213.6"/>
-                </svg>
-                <div class="score-inner">
-                  <div class="score-num" id="res-printabilidade">—</div>
-                  <div class="score-lbl">Printabilidade</div>
-                </div>
-              </div>
-              <div class="score-circle-wrap">
-                <svg class="score-circle" viewBox="0 0 80 80">
-                  <circle class="track" cx="40" cy="40" r="34"/>
-                  <circle class="fill opp-fill" cx="40" cy="40" r="34" id="circle-opp" style="stroke-dashoffset:213.6"/>
-                </svg>
-                <div class="score-inner">
-                  <div class="score-num" id="res-oportunidade">—</div>
-                  <div class="score-lbl">Oportunidade</div>
-                </div>
-              </div>
-              <div class="score-circle-wrap">
-                <svg class="score-circle" viewBox="0 0 80 80">
-                  <circle class="track" cx="40" cy="40" r="34"/>
-                  <circle class="fill sat-fill" cx="40" cy="40" r="34" id="circle-sat" style="stroke-dashoffset:213.6"/>
-                </svg>
-                <div class="score-inner">
-                  <div class="score-num" id="res-saturacao">—</div>
-                  <div class="score-lbl">Saturação</div>
-                </div>
-              </div>
-            </div>
-
-            <!-- Info cards -->
-            <div class="info-grid">
-              <div class="info-card">
-                <div class="info-icon">🧵</div>
-                <div class="info-label">Material</div>
-                <div class="info-value" id="res-material">—</div>
-                <div class="info-sub" id="res-material-alt">—</div>
-              </div>
-              <div class="info-card">
-                <div class="info-icon">⏱</div>
-                <div class="info-label">Tempo de Print</div>
-                <div class="info-value" id="res-tempo">—</div>
-                <div class="info-sub">por unidade</div>
-              </div>
-              <div class="info-card">
-                <div class="info-icon">💰</div>
-                <div class="info-label">Custo Material</div>
-                <div class="info-value" id="res-custo">—</div>
-                <div class="info-sub">estimado / unid.</div>
-              </div>
-              <div class="info-card info-highlight">
-                <div class="info-icon">📈</div>
-                <div class="info-label">Margem de Lucro</div>
-                <div class="info-value" id="res-margem">—</div>
-                <div class="info-sub" id="res-preco-sug">preço sugerido: —</div>
-              </div>
-            </div>
-
-            <!-- Dificuldade e concorrência -->
-            <div class="tags-row">
-              <div class="tag-item">
-                <span class="tag-label">Dificuldade:</span>
-                <span class="tag-value" id="res-dificuldade">—</span>
-              </div>
-              <div class="tag-item">
-                <span class="tag-label">Concorrência:</span>
-                <span class="tag-value" id="res-concorrencia">—</span>
-              </div>
-            </div>
-
-            <!-- Config de impressão -->
-            <div class="print-config-box">
-              <div class="print-config-title">⚙️ Configuração de Impressão Sugerida</div>
-              <div class="print-config-grid" id="res-config-grid">—</div>
-            </div>
-
-            <!-- Pontos favoráveis e riscos -->
-            <div class="pros-cons-row">
-              <div class="pros-box">
-                <div class="pros-title">✅ Pontos Favoráveis</div>
-                <ul id="res-pros"></ul>
-              </div>
-              <div class="cons-box">
-                <div class="cons-title">⚠️ Riscos</div>
-                <ul id="res-cons"></ul>
-              </div>
-            </div>
-
-            <!-- Análise resumo -->
-            <div class="analise-box">
-              <div class="analise-title">🤖 Análise da IA</div>
-              <p id="res-analise">—</p>
-            </div>
-
-            <!-- Palavras-chave -->
-            <div class="keywords-box">
-              <div class="keywords-title">🔍 Palavras-chave para Shopee</div>
-              <div class="keywords-list" id="res-keywords"></div>
-            </div>
-
-            <!-- Diferenciais -->
-            <div class="analise-box" style="margin-top:12px">
-              <div class="analise-title">🚀 Como Se Diferenciar</div>
-              <ul id="res-diferenciais" style="margin-top:8px;padding-left:16px;color:#94a3b8;font-size:14px;line-height:1.7"></ul>
-            </div>
-
-            <!-- Ações -->
-            <div class="result-actions">
-              <button class="btn-save" id="btn-save" onclick="salvarProduto()">💾 Salvar no Firebase</button>
-              <button class="btn-ghost" onclick="limparFormulario()">🔄 Nova Análise</button>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- ══ TAB: PRODUTOS ══ -->
-    <div class="tab-content" id="tab-produtos">
-      <div class="page-header">
-        <div>
-          <h1>Meus Produtos</h1>
-          <p class="page-sub">Histórico de análises salvas</p>
-        </div>
-        <button class="btn-primary" onclick="switchTab('analisar')">+ Analisar Novo</button>
-      </div>
-
-      <!-- FILTROS -->
-      <div class="filters-bar">
-        <div class="filter-group">
-          <label>Veredicto</label>
-          <select id="filter-veredicto" onchange="aplicarFiltros()">
-            <option value="">Todos</option>
-            <option value="PRODUZIR">✅ Produzir</option>
-            <option value="AVALIAR">⚠️ Avaliar</option>
-            <option value="EVITAR">❌ Evitar</option>
-            <option value="pendente">⏳ Pendente</option>
-          </select>
-        </div>
-        <div class="filter-group">
-          <label>Plataforma</label>
-          <select id="filter-plataforma" onchange="aplicarFiltros()">
-            <option value="">Todas</option>
-            <option value="Shopee">Shopee</option>
-            <option value="TikTok Shop">TikTok Shop</option>
-            <option value="Mercado Livre">Mercado Livre</option>
-            <option value="Amazon">Amazon</option>
-          </select>
-        </div>
-        <div class="filter-group">
-          <label>Mín. Vendas/dia</label>
-          <input type="number" id="filter-vendas" placeholder="500" onchange="aplicarFiltros()" />
-        </div>
-        <div class="filter-group">
-          <label>Score mín. oportunidade</label>
-          <input type="number" id="filter-score" placeholder="0" min="0" max="10" onchange="aplicarFiltros()" />
-        </div>
-        <div class="filter-group">
-          <label>Buscar</label>
-          <input type="text" id="filter-busca" placeholder="Nome do produto..." oninput="aplicarFiltros()" />
-        </div>
-        <button class="btn-ghost" onclick="limparFiltros()">✕ Limpar</button>
-      </div>
-
-      <div class="sort-bar">
-        <span class="sort-label">Ordenar por:</span>
-        <button class="sort-btn active" data-sort="data" onclick="sortProdutos('data')">Data ↓</button>
-        <button class="sort-btn" data-sort="score" onclick="sortProdutos('score')">Score ↓</button>
-        <button class="sort-btn" data-sort="vendas" onclick="sortProdutos('vendas')">Vendas ↓</button>
-        <button class="sort-btn" data-sort="margem" onclick="sortProdutos('margem')">Margem ↓</button>
-        <span class="filter-count" id="filter-count"></span>
-      </div>
-
-      <div class="produtos-grid" id="produtos-grid">
-        <div class="loading-state">
-          <div class="loading-spinner"></div>
-          <p>Carregando produtos...</p>
-        </div>
-      </div>
-    </div>
-
-    <!-- ══ TAB: CONFIGURAÇÕES ══ -->
-    <div class="tab-content" id="tab-config">
-      <div class="page-header">
-        <div>
-          <h1>Configurações</h1>
-          <p class="page-sub">Chaves de API e preferências de análise</p>
-        </div>
-      </div>
-
-      <div class="config-layout">
-        <div class="config-card">
-          <h3>🔑 API Claude (Anthropic)</h3>
-          <p class="config-desc">Necessária para as análises com IA. Obtenha em <a href="https://console.anthropic.com" target="_blank">console.anthropic.com</a></p>
-          <div class="field-group">
-            <label>Chave de API</label>
-            <div style="display:flex;gap:8px;">
-              <input type="password" id="cfg-api-key" placeholder="sk-ant-..." style="flex:1" />
-              <button class="btn-primary" onclick="salvarApiKey()">Salvar</button>
-            </div>
-          </div>
-          <div id="cfg-key-status" class="cfg-status hidden"></div>
-        </div>
-
-        <div class="config-card">
-          <h3>⚙️ Parâmetros de Filtro Padrão</h3>
-          <p class="config-desc">Valores padrão usados ao abrir o painel de produtos</p>
-          <div class="field-row">
-            <div class="field-group">
-              <label>Vendas mínimas / dia</label>
-              <input type="number" id="cfg-min-vendas" placeholder="500" min="0" />
-            </div>
-            <div class="field-group">
-              <label>Score mínimo de oportunidade</label>
-              <input type="number" id="cfg-min-score" placeholder="6" min="0" max="10" />
-            </div>
-          </div>
-          <button class="btn-primary" onclick="salvarConfig()">Salvar Configurações</button>
-        </div>
-
-        <div class="config-card">
-          <h3>🖨️ Seus Custos de Impressão</h3>
-          <p class="config-desc">Usado para calcular margens reais</p>
-          <div class="field-row">
-            <div class="field-group">
-              <label>Custo do filamento (R$/kg)</label>
-              <input type="number" id="cfg-filamento" placeholder="80" min="0" step="0.01" />
-            </div>
-            <div class="field-group">
-              <label>Custo da energia (R$/hora)</label>
-              <input type="number" id="cfg-energia" placeholder="1.50" min="0" step="0.01" />
-            </div>
-          </div>
-          <div class="field-row">
-            <div class="field-group">
-              <label>Mão de obra (R$/hora)</label>
-              <input type="number" id="cfg-mao-obra" placeholder="25" min="0" step="0.01" />
-            </div>
-            <div class="field-group">
-              <label>Margem mínima aceitável (%)</label>
-              <input type="number" id="cfg-margem-min" placeholder="40" min="0" max="100" />
-            </div>
-          </div>
-          <button class="btn-primary" onclick="salvarCustos()">Salvar Custos</button>
-        </div>
-
-        <div class="config-card config-danger">
-          <h3>⚠️ Zona de Perigo</h3>
-          <p class="config-desc">Ações irreversíveis</p>
-          <button class="btn-danger" onclick="limparTodosDados()">🗑️ Apagar todos os produtos</button>
-        </div>
-      </div>
+    <!-- HISTÓRICO -->
+    <div id="historico" class="section">
+      <div class="dash-header"><h2>Histórico de Movimentações</h2><p>Registro de todas as entradas e saídas</p></div>
+      <div class="search-bar"><span class="search-icon">🔍</span><input type="text" id="search-hist" placeholder="Buscar por produto ou motivo..." oninput="filtrarHistorico()"></div>
+      <div class="historico-list" id="lista-historico"><div class="empty-state"><div class="empty-icon">📋</div>Nenhuma movimentação registrada.</div></div>
     </div>
 
   </main>
+</div>
 
-  <!-- MOBILE BOTTOM NAV -->
-  <nav class="bottom-nav">
-    <button class="bnav-item active" data-tab="dashboard">
-      <span>⬡</span><small>Dashboard</small>
-    </button>
-    <button class="bnav-item" data-tab="analisar">
-      <span>◎</span><small>Analisar</small>
-    </button>
-    <button class="bnav-item" data-tab="produtos">
-      <span>◫</span><small>Produtos</small>
-    </button>
-    <button class="bnav-item" data-tab="config">
-      <span>◈</span><small>Config</small>
-    </button>
-  </nav>
-
-  <!-- MODAL DE DETALHES DO PRODUTO -->
-  <div class="modal-overlay hidden" id="produto-modal">
-    <div class="modal-box" id="modal-content"></div>
+<!-- MODAL: Editar Qtd Filamento -->
+<div class="modal-overlay" id="modal-edit">
+  <div class="modal-box">
+    <button class="modal-close" onclick="fecharModal()">✕</button>
+    <h4 id="modal-titulo">Editar quantidade</h4>
+    <div class="form-group"><label id="modal-label">Nova Quantidade</label><input type="number" step="any" id="modal-input" placeholder="0"></div>
+    <button class="submit-btn" onclick="confirmarEdicao()">Salvar Alteração</button>
   </div>
+</div>
 
-  <!-- TOAST -->
-  <div class="toast" id="toast"></div>
+<!-- MODAL: Foto do Pedido -->
+<div class="modal-overlay" id="modal-foto">
+  <div class="modal-box">
+    <button class="modal-close" onclick="document.getElementById('modal-foto').classList.remove('open')">✕</button>
+    <h4>📸 Foto do Pedido</h4>
+    <p style="color:var(--muted);font-size:13px;margin-bottom:16px">Foto do produto finalizado ou em produção.</p>
+    <div id="foto-preview-wrap" style="display:none;margin-bottom:12px"><img id="foto-preview-img" style="width:100%;border-radius:8px;max-height:220px;object-fit:cover;border:1px solid var(--glass-border)"></div>
+    <div class="upload-area" id="upload-area-modal">
+      <input type="file" id="foto-file-input" accept="image/*" onchange="previewFoto(this)">
+      <div class="upload-label"><div style="font-size:28px;margin-bottom:6px">📷</div><strong>Clique ou arraste</strong> uma imagem<br><span style="font-size:11px">JPG, PNG, WEBP — máx. 5MB</span></div>
+    </div>
+    <div class="upload-progress" id="upload-progress"><div class="upload-progress-fill" id="upload-progress-fill" style="width:0%"></div></div>
+    <div style="margin-top:8px">
+      <label class="form-group"><span style="font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:1px">Ou cole uma URL</span><input type="url" id="foto-url-input" placeholder="https://..." style="margin-top:6px;background:var(--bg3);border:1px solid var(--glass-border);border-radius:8px;padding:10px 14px;color:var(--text);font-family:var(--font-ui);font-size:14px;width:100%"></label>
+    </div>
+    <div style="display:flex;gap:10px;margin-top:16px">
+      <button class="submit-btn" onclick="salvarFotoPedido()" style="flex:2">Salvar Foto</button>
+      <button class="btn-sm btn-delete" onclick="removerFotoPedido()" style="flex:1;padding:12px">Remover</button>
+    </div>
+  </div>
+</div>
 
-  <!-- FIREBASE -->
-  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
-  <script src="firebase-config.js"></script>
-  <script src="app.js"></script>
+<!-- MODAL: Editar Pedido -->
+<div class="modal-overlay" id="modal-edit-pedido">
+  <div class="modal-box wide">
+    <button class="modal-close" onclick="fecharModalPedido()">✕</button>
+    <h4>✏️ Editar Pedido</h4>
+    <div class="form-group"><label>Nome do Cliente</label><input type="text" id="edit-ped-cliente"></div>
+    <div class="form-row">
+      <div class="form-group" style="flex:2"><label>Produto associado</label><select id="edit-ped-produto-id" onchange="onEditProdutoSelecionado()"></select></div>
+      <div class="form-group"><label>Quantidade</label><input type="number" id="edit-ped-qtd" min="1" value="1" oninput="onEditProdutoSelecionado()"></div>
+    </div>
+    <div class="consumo-preview" id="edit-consumo-preview" style="margin-bottom:14px">
+      <div style="font-size:12px;color:var(--neon);font-weight:600;margin-bottom:8px">📊 Impacto</div>
+      <div class="cp-row"><span>Filamento total:</span><strong id="edit-cp-filamento">—</strong></div>
+      <div class="cp-row"><span>Tempo total:</span><strong id="edit-cp-tempo">—</strong></div>
+    </div>
+    <div class="form-group"><label>Descrição</label><textarea id="edit-ped-desc" rows="2"></textarea></div>
+    <div class="form-row">
+      <div class="form-group"><label>Data do Pedido</label><input type="date" id="edit-ped-data-pedido"></div>
+      <div class="form-group"><label>Previsão de Entrega</label><input type="date" id="edit-ped-data-entrega"></div>
+    </div>
+    <div class="form-group"><label>Observações</label><textarea id="edit-ped-obs" rows="2"></textarea></div>
+    <div class="form-group"><label>Prioridade</label><select id="edit-ped-prioridade"><option value="normal">Normal</option><option value="alta">Alta ⚡</option><option value="baixa">Baixa</option></select></div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Status do Pagamento</label>
+        <select id="edit-ped-pagamento-status">
+          <option value="pendente">💳 Pendente</option>
+          <option value="parcial">⚡ Parcial</option>
+          <option value="pago">✅ Pago</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Valor Pago (R$)</label>
+        <input type="number" id="edit-ped-valor-pago" min="0" step="0.01" placeholder="0,00">
+      </div>
+    </div>
+    <div class="form-group">
+      <label>Forma de Pagamento</label>
+      <select id="edit-ped-forma-pagamento">
+        <option value="">— Selecionar —</option>
+        <option value="pix">PIX</option>
+        <option value="dinheiro">Dinheiro</option>
+        <option value="cartao_credito">Cartão de Crédito</option>
+        <option value="cartao_debito">Cartão de Débito</option>
+        <option value="transferencia">Transferência</option>
+        <option value="outro">Outro</option>
+      </select>
+    </div>
+    <button class="submit-btn" onclick="confirmarEdicaoPedido()">Salvar Alterações</button>
+  </div>
+</div>
+
+<!-- MODAL: Editar Produto -->
+<div class="modal-overlay" id="modal-edit-produto">
+  <div class="modal-box wide">
+    <button class="modal-close" onclick="fecharModalProduto()">✕</button>
+    <h4>✏️ Editar Produto</h4>
+    <p style="font-size:12px;color:var(--muted);margin-bottom:14px;background:var(--bg3);padding:8px 12px;border-radius:6px;border-left:2px solid var(--neon)">Dados <strong style="color:var(--neon)">por unidade</strong> — para alterar precificação, use o botão 🧮 Precificar no card</p>
+    <div id="edit-pricing-readonly" class="pricing-readonly" style="display:none">
+      <div class="pr-title">💰 Precificação atual</div>
+      <div class="pr-row"><span>Preço de venda:</span><strong id="epr-venda">—</strong></div>
+      <div class="pr-row"><span>Custo de produção:</span><strong id="epr-custo">—</strong></div>
+      <div class="pr-row"><span>Margem:</span><strong id="epr-margem">—</strong></div>
+      <div class="pr-note">🧮 Para alterar a precificação, use o botão "Precificar" no card do produto.</div>
+    </div>
+    <div class="form-group"><label>Nome</label><input type="text" id="edit-prod-nome"></div>
+    <div class="form-group"><label>Descrição</label><textarea id="edit-prod-desc" rows="2"></textarea></div>
+    <div class="form-row">
+      <div class="form-group"><label>Quantidade em Estoque</label><input type="number" id="edit-prod-qtd" min="0"></div>
+      <div class="form-group"><label>Tempo por unidade</label><input type="text" id="edit-prod-tempo"></div>
+    </div>
+    <div class="form-group">
+      <label>🎨 Receita de Filamentos (por unidade)</label>
+      <div id="edit-receita-list"></div>
+      <div class="receita-empty" id="edit-receita-empty" style="display:none">Nenhuma cor adicionada.</div>
+      <div class="receita-total" id="edit-receita-total" style="display:none">Total: 0g</div>
+      <div class="receita-custo-total" id="edit-receita-custo" style="display:none"></div>
+      <button type="button" class="btn-add-receita" onclick="adicionarReceitaRow('edit')">+ Adicionar Filamento / Cor</button>
+    </div>
+    <div class="form-group"><label>URL da Imagem / MakerWorld</label><input type="url" id="edit-prod-img" placeholder="https://makerworld.com/..."></div>
+    <button class="submit-btn" onclick="confirmarEdicaoProduto()">Salvar Produto</button>
+  </div>
+</div>
+
+<!-- MODAL: Dedução Multi-Filamento -->
+<div class="modal-overlay" id="modal-deducao-fil">
+  <div class="modal-box wide">
+    <button class="modal-close" onclick="fecharModalDeducao()">✕</button>
+    <h4>🧵 Consumo de Filamento</h4>
+    <p style="font-size:13px;color:var(--muted);margin-bottom:16px">
+      Ao mover para <strong style="color:var(--blue)">Em Produção</strong>, selecione os filamentos que serão consumidos.
+    </p>
+    <div class="deducao-info" id="deducao-info-box">—</div>
+    <div id="deducao-filamentos-grupos"></div>
+    <button class="submit-btn" onclick="confirmarDeducaoFilamento()" style="background:var(--blue)">✓ Confirmar e Iniciar Produção</button>
+    <button class="skip-deducao-btn" onclick="pularDeducao()">Pular (não deduzir filamento agora)</button>
+  </div>
+</div>
+
+<div class="toast-area" id="toast-area"></div>
+
+<!-- FIREBASE MODULE -->
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
+import {
+  getFirestore, collection, addDoc, onSnapshot,
+  doc, updateDoc, deleteDoc, query, orderBy
+} from "https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js";
+import {
+  getStorage, ref, uploadBytesResumable, getDownloadURL, deleteObject
+} from "https://www.gstatic.com/firebasejs/9.22.0/firebase-storage.js";
+import {
+  getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged
+} from "https://www.gstatic.com/firebasejs/9.22.0/firebase-auth.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyDEWD_R8z5dFFEhRQ1bUUpk9CCo47a7RHA",
+  authDomain: "estoque-3d.firebaseapp.com",
+  projectId: "estoque-3d",
+  storageBucket: "estoque-3d.firebasestorage.app",
+  messagingSenderId: "970757670839",
+  appId: "1:970757670839:web:cf41d4c9ad4acac96c0a32"
+};
+
+const app      = initializeApp(firebaseConfig);
+const db       = getFirestore(app);
+const storage  = getStorage(app);
+const auth     = getAuth(app);
+const provider = new GoogleAuthProvider();
+
+const emailsPermitidos = ["guigas83@gmail.com","luciana.lukassantos@gmail.com"];
+
+const colFilamentos = collection(db,"filamentos");
+const colProdutos   = collection(db,"produtos");
+const colPedidos    = collection(db,"pedidos");
+const colMovimentos = collection(db,"movimentos");
+
+// Estado global
+window._filamentos  = [];
+window._produtos    = [];
+window._pedidos     = [];
+window._movimentos  = [];
+window._editCtx     = null;
+window._editPedidoId = null;
+window._editProdId  = null;
+window._fotoCtx     = null;
+window._filtroStatus = 'todos';
+window._calcEditingProdId = null;
+// Cache das barras de filamentos para filtro inline
+window._dashFilBarsCache = [];
+let _deducaoCtx = null;
+let _calcChart  = null;
+
+// ── UTILS ────────────────────────────────────────────────
+window.toast = function(msg, tipo='ok'){
+  const el = document.createElement('div');
+  el.className = 'toast'+(tipo==='err'?' err':tipo==='warn'?' warn':'');
+  el.textContent = msg;
+  document.getElementById('toast-area').appendChild(el);
+  setTimeout(()=>el.remove(), 3500);
+};
+
+function fmt(n){ return 'R$ '+Number(n||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+function formatDate(iso){ if(!iso) return '—'; const [y,m,d]=iso.split('-'); return `${d}/${m}/${y}`; }
+function formatDateTime(iso){ if(!iso) return '—'; const d=new Date(iso); return d.toLocaleDateString('pt-BR')+' '+d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}); }
+function prazoInfo(dataEntrega){
+  if(!dataEntrega) return {label:'sem prazo',cls:''};
+  const hoje=new Date(); hoje.setHours(0,0,0,0);
+  const entrega=new Date(dataEntrega+'T00:00:00');
+  const diff=Math.round((entrega-hoje)/(1000*60*60*24));
+  if(diff<0) return {label:`${Math.abs(diff)}d atrasado`,cls:'prazo-over'};
+  if(diff===0) return {label:'Hoje!',cls:'prazo-warn'};
+  if(diff<=3) return {label:`${diff}d restantes`,cls:'prazo-warn'};
+  return {label:`${diff}d restantes`,cls:'prazo-ok'};
+}
+const statusInfo = {
+  aguardando:{label:'Aguardando',icon:'⏳',cls:'badge-aguardando',cycleTo:'producao'},
+  producao:  {label:'Em Produção',icon:'⚙️',cls:'badge-producao',cycleTo:'concluido'},
+  concluido: {label:'Concluído',icon:'✅',cls:'badge-concluido',cycleTo:'aguardando'},
+};
+function nextStatus(s){ return statusInfo[s]?.cycleTo||'aguardando'; }
+
+window.goToTab = function(tabId){
+  document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));
+  document.querySelectorAll('.nav-tab').forEach(b=>b.classList.remove('active'));
+  document.getElementById(tabId).classList.add('active');
+  const btn=document.querySelector(`.nav-tab[data-tab="${tabId}"]`);
+  if(btn) btn.classList.add('active');
+};
+
+function multiplicarTempo(tempoStr, qtd){
+  if(!tempoStr||qtd<=1) return tempoStr||'—';
+  const h=parseInt((tempoStr.match(/(\d+)\s*h/)||[])[1])||0;
+  const m=parseInt((tempoStr.match(/(\d+)\s*m/)||[])[1])||0;
+  const total=(h*60+m)*qtd;
+  const rH=Math.floor(total/60), rM=total%60;
+  return rH>0?`${rH}h${rM>0?` ${rM}m`:''}`:rM>0?`${rM}m`:'—';
+}
+window.multiplicarTempo = multiplicarTempo;
+
+// ── RECEITA DE FILAMENTOS ───────────
+function getProdutoReceita(prod){
+  if(prod?.receita && prod.receita.length>0) return prod.receita;
+  if(prod?.gasto>0){
+    return [{label:'Filamento', gramas: prod.unidade==='kg'?prod.gasto*1000:prod.gasto}];
+  }
+  return [];
+}
+
+function receitaTotalGramas(receita){
+  return receita.reduce((s,r)=>s+(r.gramas||0),0);
+}
+
+function calcularCustoReceita(receita){
+  let total=0;
+  receita.forEach(r=>{
+    const fil=window._filamentos.find(f=>f._id===r.filId);
+    const precoKg=fil?.precoKg||0;
+    if(precoKg>0) total += (r.gramas/1000)*precoKg;
+  });
+  return total;
+}
+
+window.adicionarReceitaRow = function(ctx, filId='', gramas=''){
+  const listId = ctx+'-receita-list';
+  const emptyId = ctx+'-receita-empty';
+  const container = document.getElementById(listId);
+  if(!container) return;
+  const emptyEl = document.getElementById(emptyId);
+  if(emptyEl) emptyEl.style.display='none';
+
+  const row = document.createElement('div');
+  row.className = 'receita-row';
+
+  let opts='<option value="">— Selecionar —</option>';
+  window._filamentos.forEach(f=>{
+    const precoStr=f.precoKg?` — R$${Number(f.precoKg).toFixed(2)}/kg`:'';
+    opts+=`<option value="${f._id}" ${f._id===filId?'selected':''}>${f.cor} (${f.marca})${precoStr}</option>`;
+  });
+
+  row.innerHTML = `
+    <select class="r-fil-select">${opts}</select>
+    <input type="number" class="r-gramas" placeholder="g" value="${gramas}" min="0" step="0.1">
+    <span class="r-custo-preview">—</span>
+    <button type="button" class="r-remove" onclick="removerReceitaRow(this,'${ctx}')">✕</button>
+  `;
+
+  const sel=row.querySelector('.r-fil-select');
+  const gEl=row.querySelector('.r-gramas');
+  const custoEl=row.querySelector('.r-custo-preview');
+
+  function atualizarCustoRow(){
+    const fId=sel.value;
+    const g=Number(gEl.value)||0;
+    const fil=window._filamentos.find(f=>f._id===fId);
+    if(fil&&fil.precoKg&&g>0){
+      const c=(g/1000)*fil.precoKg;
+      custoEl.textContent=fmt(c);
+    } else {
+      custoEl.textContent='—';
+    }
+    atualizarTotalReceita(ctx);
+  }
+
+  sel.addEventListener('change',atualizarCustoRow);
+  gEl.addEventListener('input',atualizarCustoRow);
+
+  container.appendChild(row);
+  atualizarCustoRow();
+};
+
+window.removerReceitaRow = function(btn, ctx){
+  btn.parentElement.remove();
+  const container = document.getElementById(ctx+'-receita-list');
+  if(container && container.children.length===0){
+    const emptyEl = document.getElementById(ctx+'-receita-empty');
+    if(emptyEl) emptyEl.style.display='block';
+  }
+  atualizarTotalReceita(ctx);
+};
+
+window.atualizarTotalReceita = function(ctx){
+  const container = document.getElementById(ctx+'-receita-list');
+  const totalEl = document.getElementById(ctx+'-receita-total');
+  const custoEl = document.getElementById(ctx+'-receita-custo');
+  if(!container) return;
+  let totalG=0, totalCusto=0;
+  container.querySelectorAll('.receita-row').forEach(row=>{
+    const g=Number(row.querySelector('.r-gramas').value)||0;
+    const fId=row.querySelector('.r-fil-select')?.value||'';
+    totalG+=g;
+    const fil=window._filamentos.find(f=>f._id===fId);
+    if(fil&&fil.precoKg&&g>0) totalCusto+=(g/1000)*fil.precoKg;
+  });
+  if(totalEl){
+    if(totalG>0){totalEl.style.display='block';totalEl.textContent=`Total por unidade: ${totalG.toFixed(1)}g`;}
+    else totalEl.style.display='none';
+  }
+  if(custoEl){
+    if(totalCusto>0){custoEl.style.display='block';custoEl.textContent=`Custo material: ${fmt(totalCusto)}`;}
+    else custoEl.style.display='none';
+  }
+};
+
+function getReceita(ctx){
+  const container = document.getElementById(ctx+'-receita-list');
+  if(!container) return [];
+  const receita=[];
+  container.querySelectorAll('.receita-row').forEach(row=>{
+    const filId=row.querySelector('.r-fil-select')?.value||'';
+    const gramas=Number(row.querySelector('.r-gramas').value)||0;
+    if(gramas>0){
+      const fil=window._filamentos.find(f=>f._id===filId);
+      receita.push({
+        filId,
+        label:fil?`${fil.cor} (${fil.marca})`:'Filamento',
+        gramas,
+        precoKg:fil?.precoKg||0
+      });
+    }
+  });
+  return receita;
+}
+
+// ── CALCULADORA — RECEITA DE FILAMENTOS ────────────────
+window.calcAdicionarReceitaRow = function(filId='', gramas=''){
+  const container = document.getElementById('calc-receita-list');
+  const emptyEl = document.getElementById('calc-receita-empty');
+  if(!container) return;
+  if(emptyEl) emptyEl.style.display='none';
+
+  const row = document.createElement('div');
+  row.className = 'calc-receita-row';
+
+  let opts='<option value="">— Selecionar filamento —</option>';
+  window._filamentos.forEach(f=>{
+    const precoStr=f.precoKg?` — R$${Number(f.precoKg).toFixed(2)}/kg`:'';
+    opts+=`<option value="${f._id}" ${f._id===filId?'selected':''}>${f.cor} (${f.marca})${precoStr}</option>`;
+  });
+
+  row.innerHTML=`
+    <select>${opts}</select>
+    <input type="number" placeholder="g" value="${gramas}" min="0" step="0.1">
+    <span class="r-custo-fil">—</span>
+    <button type="button" class="r-rem-btn" onclick="calcRemoverReceitaRow(this)">✕</button>
+  `;
+
+  const sel=row.querySelector('select');
+  const gEl=row.querySelector('input');
+  const custoEl=row.querySelector('.r-custo-fil');
+
+  function atualizar(){
+    const fId=sel.value;
+    const g=Number(gEl.value)||0;
+    const fil=window._filamentos.find(f=>f._id===fId);
+    if(fil&&fil.precoKg&&g>0){
+      custoEl.textContent=fmt((g/1000)*fil.precoKg);
+    } else {
+      custoEl.textContent='—';
+    }
+    calcAtualizarReceitaTotal();
+    calcAuto();
+  }
+
+  sel.addEventListener('change',atualizar);
+  gEl.addEventListener('input',atualizar);
+
+  container.appendChild(row);
+  atualizar();
+};
+
+window.calcRemoverReceitaRow = function(btn){
+  btn.parentElement.remove();
+  const container=document.getElementById('calc-receita-list');
+  if(container&&container.children.length===0){
+    const emptyEl=document.getElementById('calc-receita-empty');
+    if(emptyEl) emptyEl.style.display='block';
+  }
+  calcAtualizarReceitaTotal();
+  calcAuto();
+};
+
+function calcAtualizarReceitaTotal(){
+  const container=document.getElementById('calc-receita-list');
+  const boxEl=document.getElementById('calc-receita-total-box');
+  const totalEl=document.getElementById('calc-receita-custo-total');
+  if(!container||!boxEl||!totalEl) return;
+  let totalCusto=0;
+  container.querySelectorAll('.calc-receita-row').forEach(row=>{
+    const fId=row.querySelector('select')?.value||'';
+    const g=Number(row.querySelector('input')?.value)||0;
+    const fil=window._filamentos.find(f=>f._id===fId);
+    if(fil&&fil.precoKg&&g>0) totalCusto+=(g/1000)*fil.precoKg;
+  });
+  if(totalCusto>0){boxEl.style.display='flex';totalEl.textContent=fmt(totalCusto);}
+  else boxEl.style.display='none';
+}
+
+function calcGetReceita(){
+  const container=document.getElementById('calc-receita-list');
+  if(!container) return [];
+  const receita=[];
+  container.querySelectorAll('.calc-receita-row').forEach(row=>{
+    const fId=row.querySelector('select')?.value||'';
+    const g=Number(row.querySelector('input')?.value)||0;
+    if(g>0){
+      const fil=window._filamentos.find(f=>f._id===fId);
+      receita.push({filId:fId,label:fil?`${fil.cor} (${fil.marca})`:'Filamento',gramas:g,precoKg:fil?.precoKg||0});
+    }
+  });
+  return receita;
+}
+
+function calcCustoMaterial(){
+  const receita=calcGetReceita();
+  return receita.reduce((s,r)=>s+(r.gramas/1000)*(r.precoKg||0),0);
+}
+
+function calcPesoTotal(){
+  const receita=calcGetReceita();
+  return receita.reduce((s,r)=>s+r.gramas,0);
+}
+
+// ── IMAGEM PRODUTO ──────────────────────────────────────
+function resolverUrlImagem(url){
+  if(!url) return null;
+  const paginaPatterns=[/makerworld\.com\//i,/thingiverse\.com\//i,/printables\.com\//i];
+  for(const pat of paginaPatterns){ if(pat.test(url)) return {tipo:'pagina',url}; }
+  return {tipo:'imagem',url};
+}
+
+function buildImgHover(url, nome){
+  if(!url) return '';
+  const res=resolverUrlImagem(url);
+  if(!res) return '';
+  if(res.tipo==='pagina'){
+    return `<div class="prod-img-hover"><div class="img-link-preview"><span style="font-size:24px">🔗</span><span>Link externo (MakerWorld, etc.)</span><a href="${url}" target="_blank" rel="noopener">🌐 Abrir link</a></div></div>`;
+  }
+  return `<div class="prod-img-hover"><img src="${url}" alt="${nome}" onerror="this.parentElement.innerHTML='<div class=\\'img-link-preview\\'><span>🖼️</span><span>Imagem indisponível</span></div>'"></div>`;
+}
+
+// ── CÁLCULOS PEDIDO ────────────────────────────────────
+function calcularConsumoPedido(produto, qtd){
+  if(!produto) return null;
+  const receita = getProdutoReceita(produto);
+  const totalG = receitaTotalGramas(receita)*qtd;
+  return {filamento:totalG, unidade:'g', qtd, estoqueAtual:produto.qtd||0, estoqueApos:(produto.qtd||0)-qtd, receita};
+}
+
+window.onProdutoSelecionado = function(){
+  const prodId=document.getElementById('ped-produto-id').value;
+  const wrap=document.getElementById('wrap-qtd-pedido');
+  if(!prodId){wrap.style.display='none';return;}
+  wrap.style.display='block';
+  atualizarConsumoPrevio();
+};
+
+window.atualizarConsumoPrevio = function(){
+  const prodId=document.getElementById('ped-produto-id').value;
+  const qtd=parseInt(document.getElementById('ped-qtd').value)||1;
+  const preview=document.getElementById('consumo-preview');
+  if(!prodId){preview.classList.remove('visible');return;}
+  const prod=window._produtos.find(p=>p._id===prodId);
+  if(!prod){preview.classList.remove('visible');return;}
+  const c=calcularConsumoPedido(prod,qtd);
+  preview.classList.add('visible');
+  document.getElementById('cp-produto-nome').textContent=prod.nome;
+  document.getElementById('cp-qtd').textContent=qtd+' un.';
+  document.getElementById('cp-filamento').textContent=`${c.filamento.toFixed(1)}g`;
+  document.getElementById('cp-tempo').textContent=multiplicarTempo(prod.tempo,qtd);
+  document.getElementById('cp-estoque-atual').textContent=c.estoqueAtual+' un.';
+  document.getElementById('cp-estoque-apos').textContent=c.estoqueApos+' un.';
+  const msgEl=document.getElementById('cp-msg');
+  if(c.estoqueApos<0){msgEl.className='cp-warn';msgEl.innerHTML=`⚠️ Estoque insuficiente! Faltam ${Math.abs(c.estoqueApos)} un.`;}
+  else if(c.estoqueApos===0){msgEl.className='cp-warn';msgEl.innerHTML='⚠️ Este pedido esgotará o estoque';}
+  else{msgEl.className='cp-ok';msgEl.innerHTML='✓ Estoque suficiente';}
+};
+
+window.onEditProdutoSelecionado = function(){
+  const prodId=document.getElementById('edit-ped-produto-id').value;
+  const qtd=parseInt(document.getElementById('edit-ped-qtd').value)||1;
+  const preview=document.getElementById('edit-consumo-preview');
+  if(!prodId){preview.classList.remove('visible');return;}
+  const prod=window._produtos.find(p=>p._id===prodId);
+  if(!prod){preview.classList.remove('visible');return;}
+  const c=calcularConsumoPedido(prod,qtd);
+  preview.classList.add('visible');
+  document.getElementById('edit-cp-filamento').textContent=`${c.filamento.toFixed(1)}g`;
+  document.getElementById('edit-cp-tempo').textContent=multiplicarTempo(prod.tempo,qtd);
+};
+
+// ── MODAL EDITAR QTD FILAMENTO ─────────────────────────
+window.abrirModal = function(colecao,id,nome,qtdAtual,und){
+  window._editCtx={colecao,id};
+  document.getElementById('modal-titulo').textContent=`Editar: ${nome}`;
+  document.getElementById('modal-label').textContent=`Nova quantidade em ${und}`;
+  document.getElementById('modal-input').value=qtdAtual;
+  document.getElementById('modal-edit').classList.add('open');
+  document.getElementById('modal-input').focus();
+};
+window.fecharModal = ()=>{document.getElementById('modal-edit').classList.remove('open');window._editCtx=null;};
+window.confirmarEdicao = async()=>{
+  const val=document.getElementById('modal-input').value;
+  if(val===''||!window._editCtx) return;
+  const ctx=window._editCtx, novaQtd=Number(val);
+  try{
+    const arr=ctx.colecao==='filamentos'?window._filamentos:window._produtos;
+    const item=arr.find(x=>x._id===ctx.id);
+    const diff=novaQtd-(item?.qtd||0);
+    await updateDoc(doc(db,ctx.colecao,ctx.id),{qtd:novaQtd});
+    if(diff!==0){
+      await addDoc(colMovimentos,{tipo:diff>0?'entrada':'saida',colecao:ctx.colecao,itemId:ctx.id,itemNome:item?.nome||item?.cor||'?',quantidade:Math.abs(diff),unidade:item?.unidade||'un.',motivo:'Ajuste manual',data:new Date().toISOString(),usuario:auth.currentUser?.email||'—'});
+    }
+    toast('Quantidade atualizada ✓');fecharModal();
+  }catch(e){toast('Erro: '+e.message,'err')}
+};
+
+// ── MODAL EDITAR PRODUTO ─────────────────────────────
+window.abrirModalEditProduto = function(id){
+  const p=window._produtos.find(x=>x._id===id);
+  if(!p) return;
+  window._editProdId=id;
+  document.getElementById('edit-prod-nome').value=p.nome||'';
+  document.getElementById('edit-prod-desc').value=p.desc||'';
+  document.getElementById('edit-prod-qtd').value=p.qtd||0;
+  document.getElementById('edit-prod-tempo').value=p.tempo||'';
+  document.getElementById('edit-prod-img').value=p.img&&!p.img.startsWith('data:')?p.img:'';
+  const prBox=document.getElementById('edit-pricing-readonly');
+  if(p.precoVenda){
+    prBox.style.display='block';
+    document.getElementById('epr-venda').textContent=fmt(p.precoVenda);
+    document.getElementById('epr-custo').textContent=p.custoProducao?fmt(p.custoProducao):'—';
+    document.getElementById('epr-margem').textContent=p.margemLucro?p.margemLucro+'%':'—';
+  } else {
+    prBox.style.display='none';
+  }
+  const container=document.getElementById('edit-receita-list');
+  container.innerHTML='';
+  const receita=getProdutoReceita(p);
+  const emptyEl=document.getElementById('edit-receita-empty');
+  if(receita.length===0){
+    if(emptyEl) emptyEl.style.display='block';
+  } else {
+    if(emptyEl) emptyEl.style.display='none';
+    receita.forEach(r=>adicionarReceitaRow('edit',r.filId||'',r.gramas));
+  }
+  atualizarTotalReceita('edit');
+  document.getElementById('modal-edit-produto').classList.add('open');
+};
+
+window.abrirCalculadoraComProduto = function(id){
+  const p=window._produtos.find(x=>x._id===id);
+  if(!p) return;
+  window._calcEditingProdId=id;
+  const cd=p.calcData||{};
+  document.getElementById('calc-nome').value=p.nome||'';
+  document.getElementById('calc-desc').value=p.desc||'';
+  document.getElementById('calc-tempo').value=cd.tempo||'';
+  document.getElementById('calc-potencia').value=cd.potencia||'';
+  document.getElementById('calc-energia').value=cd.energia||0.97;
+  document.getElementById('calc-perda').value=cd.perda||0;
+  document.getElementById('calc-maquina').value=cd.maquina||2000;
+  document.getElementById('calc-vida').value=cd.vida||5000;
+  document.getElementById('calc-embalagem').value=cd.embalagem||0;
+  document.getElementById('calc-mao').value=cd.mao||0;
+  document.getElementById('calc-outros').value=cd.outros||0;
+  document.getElementById('calc-manut').value=cd.manut||0;
+  document.getElementById('calc-margem').value=cd.margem||p.margemLucro||100;
+  document.getElementById('calc-taxa-perc').value=cd.taxaPerc||0;
+  document.getElementById('calc-taxa-fixa').value=cd.taxaFixa||0;
+  document.getElementById('calc-img-url').value=p.img||'';
+  if(p.precoVenda) document.getElementById('calc-preco').value=p.precoVenda.toFixed(2);
+
+  const calcReceitaContainer=document.getElementById('calc-receita-list');
+  calcReceitaContainer.innerHTML='';
+  document.getElementById('calc-receita-empty').style.display='block';
+  document.getElementById('calc-receita-total-box').style.display='none';
+  const receita=getProdutoReceita(p);
+  if(receita.length>0){
+    receita.forEach(r=>calcAdicionarReceitaRow(r.filId||'',r.gramas));
+  } else if(cd.peso>0){
+    calcAdicionarReceitaRow('',cd.peso);
+  }
+
+  document.getElementById('calc-editing-notice').style.display='block';
+  calcularPreco();
+  goToTab('calculadora');
+  toast('📐 Produto carregado na calculadora para repricing');
+};
+
+window.fecharModalProduto = ()=>{document.getElementById('modal-edit-produto').classList.remove('open');window._editProdId=null;};
+
+window.confirmarEdicaoProduto = async()=>{
+  if(!window._editProdId) return;
+  const novaQtd=Number(document.getElementById('edit-prod-qtd').value);
+  const item=window._produtos.find(x=>x._id===window._editProdId);
+  const diff=novaQtd-(item?.qtd||0);
+  const receita=getReceita('edit');
+  const totalGasto=receitaTotalGramas(receita);
+  try{
+    await updateDoc(doc(db,'produtos',window._editProdId),{
+      nome:document.getElementById('edit-prod-nome').value,
+      desc:document.getElementById('edit-prod-desc').value,
+      qtd:novaQtd,
+      tempo:document.getElementById('edit-prod-tempo').value,
+      receita,
+      gasto:totalGasto,
+      unidade:'g',
+      img:document.getElementById('edit-prod-img').value
+    });
+    if(diff!==0){
+      await addDoc(colMovimentos,{tipo:diff>0?'entrada':'saida',colecao:'produtos',itemId:window._editProdId,itemNome:item?.nome||'?',quantidade:Math.abs(diff),unidade:'un.',motivo:'Ajuste via edição',data:new Date().toISOString(),usuario:auth.currentUser?.email||'—'});
+    }
+    toast('Produto atualizado ✓');fecharModalProduto();
+  }catch(e){toast('Erro: '+e.message,'err')}
+};
+
+window.excluirItem = async(colecao,id,nome)=>{
+  if(!confirm(`Excluir "${nome}" permanentemente?`)) return;
+  try{await deleteDoc(doc(db,colecao,id));toast('Item excluído');}catch(e){toast('Erro: '+e.message,'err')}
+};
+
+// ── MODAL EDITAR PEDIDO ───────────────────────────────
+window.abrirModalEditPedido = function(id){
+  const p=window._pedidos.find(x=>x._id===id);
+  if(!p) return;
+  window._editPedidoId=id;
+  document.getElementById('edit-ped-cliente').value=p.cliente||'';
+  document.getElementById('edit-ped-desc').value=p.desc||'';
+  document.getElementById('edit-ped-data-pedido').value=p.dataPedido||'';
+  document.getElementById('edit-ped-data-entrega').value=p.dataEntrega||'';
+  document.getElementById('edit-ped-obs').value=p.obs||'';
+  document.getElementById('edit-ped-prioridade').value=p.prioridade||'normal';
+  document.getElementById('edit-ped-qtd').value=p.qtdPedida||1;
+  document.getElementById('edit-ped-pagamento-status').value=p.pagamentoStatus||'pendente';
+  document.getElementById('edit-ped-valor-pago').value=p.valorPago||'';
+  document.getElementById('edit-ped-forma-pagamento').value=p.formaPagamento||'';
+  const sel=document.getElementById('edit-ped-produto-id');
+  sel.innerHTML='<option value="">— Nenhum —</option>';
+  window._produtos.forEach(pr=>{
+    const opt=document.createElement('option');
+    opt.value=pr._id;opt.textContent=`${pr.nome} (${pr.qtd} un.)`;
+    if(pr._id===p.produtoId) opt.selected=true;
+    sel.appendChild(opt);
+  });
+  onEditProdutoSelecionado();
+  document.getElementById('modal-edit-pedido').classList.add('open');
+};
+window.fecharModalPedido = ()=>{document.getElementById('modal-edit-pedido').classList.remove('open');window._editPedidoId=null;};
+window.confirmarEdicaoPedido = async()=>{
+  if(!window._editPedidoId) return;
+  const prodId=document.getElementById('edit-ped-produto-id').value;
+  const prodNome=prodId?(window._produtos.find(p=>p._id===prodId)?.nome||''):'';
+  const qtd=parseInt(document.getElementById('edit-ped-qtd').value)||1;
+  try{
+    await updateDoc(doc(db,'pedidos',window._editPedidoId),{
+      cliente:document.getElementById('edit-ped-cliente').value,
+      desc:document.getElementById('edit-ped-desc').value,
+      dataPedido:document.getElementById('edit-ped-data-pedido').value,
+      dataEntrega:document.getElementById('edit-ped-data-entrega').value,
+      obs:document.getElementById('edit-ped-obs').value,
+      prioridade:document.getElementById('edit-ped-prioridade').value,
+      produtoId:prodId,
+      produtoNome:prodNome,
+      qtdPedida:qtd,
+      pagamentoStatus:document.getElementById('edit-ped-pagamento-status').value,
+      valorPago:Number(document.getElementById('edit-ped-valor-pago').value)||0,
+      formaPagamento:document.getElementById('edit-ped-forma-pagamento').value
+    });
+    toast('Pedido atualizado ✓');fecharModalPedido();
+  }catch(e){toast('Erro: '+e.message,'err')}
+};
+
+// ── DEDUÇÃO MULTI-FILAMENTO ──────────────────────────────
+window.iniciarDeducaoFilamento = function(pedidoId, pedido, statusNovo){
+  const prod=window._produtos.find(p=>p._id===pedido.produtoId);
+  const qtd=pedido.qtdPedida||1;
+  const receitaBase=getProdutoReceita(prod);
+  const receita=receitaBase.map(r=>({
+    label:r.label||'Filamento',
+    gramas:parseFloat(((r.gramas||0)*qtd).toFixed(2)),
+    filId:r.filId||''
+  }));
+
+  if(!receita.length){
+    updateDoc(doc(db,'pedidos',pedidoId),{status:statusNovo})
+      .then(()=>toast(`Status → ${statusInfo[statusNovo].label}`))
+      .catch(e=>toast('Erro: '+e.message,'err'));
+    return;
+  }
+
+  const totalGramas=receita.reduce((s,r)=>s+r.gramas,0);
+  _deducaoCtx={pedidoId,pedido,statusNovo,receita,qtd,prod};
+
+  document.getElementById('deducao-info-box').innerHTML=`
+    <div>Produto: <strong>${prod?.nome||pedido.produtoNome||'—'}</strong></div>
+    <div>Quantidade: <strong>${qtd} unidade(s)</strong></div>
+    <div>Total de filamento: <strong>${totalGramas.toFixed(1)}g</strong></div>`;
+
+  const container=document.getElementById('deducao-filamentos-grupos');
+  container.innerHTML='';
+
+  receita.forEach((item,idx)=>{
+    const hiddenId=`dfs-${idx}`;
+    const grupo=document.createElement('div');
+    grupo.className='deducao-grupo';
+
+    let filsHtml='';
+    if(!window._filamentos.length){
+      filsHtml='<div style="padding:12px;color:var(--muted);font-size:13px">Nenhum filamento cadastrado</div>';
+    } else {
+      const filPadrao=window._filamentos.find(f=>f._id===item.filId);
+      let preSelectedId=filPadrao?filPadrao._id:'';
+      if(!preSelectedId){
+        const suf=window._filamentos.find(f=>{const q=f.unidade==='kg'?f.qtd*1000:f.qtd;return q>=item.gramas;});
+        if(suf) preSelectedId=suf._id;
+        else if(window._filamentos.length>0) preSelectedId=window._filamentos[0]._id;
+      }
+      window._filamentos.forEach(f=>{
+        const qtdG=f.unidade==='kg'?f.qtd*1000:f.qtd;
+        const suficiente=qtdG>=item.gramas;
+        const sel=f._id===preSelectedId;
+        filsHtml+=`<div class="fil-select-item${suficiente?'':' insufficient'}${sel?' selected':''}"
+          data-fil-id="${f._id}" data-group="${idx}"
+          onclick="selecionarFilDeducao(this,'${hiddenId}','${idx}')">
+          <div><div class="fs-name">${f.cor}</div><div class="fs-brand">${f.marca}${f.precoKg?' — R$'+Number(f.precoKg).toFixed(2)+'/kg':''}</div></div>
+          <div style="text-align:right">
+            <div class="fs-qty">${f.qtd}${f.unidade||'g'}</div>
+            <div style="font-size:10px;color:${suficiente?'var(--neon)':'var(--red)'}">${suficiente?'✓ ok':'⚠️ pouco'}</div>
+          </div>
+        </div>`;
+      });
+    }
+
+    const gramasUn=receitaBase.find(r=>r.label===item.label)?.gramas||item.gramas;
+    const qtdInfo=qtd>1?` (${gramasUn.toFixed(1)}g × ${qtd})`:''
+
+    grupo.innerHTML=`
+      <div class="deducao-grupo-header">
+        <span class="deducao-grupo-title">🧵 ${item.label}</span>
+        <span class="deducao-grupo-qty">${item.gramas}g${qtdInfo}</span>
+      </div>
+      <div class="fil-select-list">${filsHtml}</div>
+      <input type="hidden" id="${hiddenId}" value="">`;
+
+    container.appendChild(grupo);
+
+    const firstSel=grupo.querySelector('.fil-select-item.selected');
+    if(firstSel) document.getElementById(hiddenId).value=firstSel.dataset.filId;
+  });
+
+  document.getElementById('modal-deducao-fil').classList.add('open');
+};
+
+window.selecionarFilDeducao = function(el, hiddenId, groupIdx){
+  document.querySelectorAll(`.fil-select-item[data-group="${groupIdx}"]`).forEach(x=>x.classList.remove('selected'));
+  el.classList.add('selected');
+  document.getElementById(hiddenId).value=el.dataset.filId;
+};
+
+window.confirmarDeducaoFilamento = async function(){
+  if(!_deducaoCtx) return;
+  const {pedidoId,pedido,statusNovo,receita}=_deducaoCtx;
+  for(let i=0;i<receita.length;i++){
+    const filId=document.getElementById(`dfs-${i}`)?.value;
+    if(!filId) continue;
+    const fil=window._filamentos.find(f=>f._id===filId);
+    if(!fil) continue;
+    const qtdG=fil.unidade==='kg'?fil.qtd*1000:fil.qtd;
+    const novaQtdG=Math.max(0,qtdG-receita[i].gramas);
+    const novaQtd=fil.unidade==='kg'?novaQtdG/1000:novaQtdG;
+    try{
+      await updateDoc(doc(db,'filamentos',filId),{qtd:novaQtd});
+      await addDoc(colMovimentos,{tipo:'saida',colecao:'filamentos',itemId:filId,itemNome:`${fil.cor} (${fil.marca})`,quantidade:receita[i].gramas,unidade:'g',motivo:`Produção [${receita[i].label}] — ${pedido.cliente} | ${pedido.produtoNome||''}`,pedidoId,data:new Date().toISOString(),usuario:auth.currentUser?.email||'—'});
+      toast(`🧵 ${receita[i].gramas}g "${fil.cor}" deduzidos`,'warn');
+    }catch(e){toast('Erro ao deduzir: '+e.message,'err');}
+  }
+  try{
+    await updateDoc(doc(db,'pedidos',pedidoId),{status:statusNovo});
+    toast(`Status → ${statusInfo[statusNovo].label}`);
+  }catch(e){toast('Erro: '+e.message,'err');}
+  fecharModalDeducao();
+};
+
+window.pularDeducao = async function(){
+  if(!_deducaoCtx) return;
+  const {pedidoId,statusNovo}=_deducaoCtx;
+  try{await updateDoc(doc(db,'pedidos',pedidoId),{status:statusNovo});toast(`Status → ${statusInfo[statusNovo].label}`);}catch(e){toast('Erro: '+e.message,'err');}
+  fecharModalDeducao();
+};
+window.fecharModalDeducao = function(){document.getElementById('modal-deducao-fil').classList.remove('open');_deducaoCtx=null;};
+
+// ── CICLAR STATUS ─────────────────────────────────────
+window.ciclarStatus = async(id, statusAtual)=>{
+  const novo=nextStatus(statusAtual);
+
+  if(novo==='producao'){
+    const pedido=window._pedidos.find(x=>x._id===id);
+    if(pedido?.produtoId){
+      const prod=window._produtos.find(p=>p._id===pedido.produtoId);
+      const receita=getProdutoReceita(prod);
+      if(receita.length>0&&window._filamentos.length>0){
+        window.iniciarDeducaoFilamento(id,pedido,novo);
+        return;
+      }
+    }
+    try{await updateDoc(doc(db,'pedidos',id),{status:novo});toast(`Status → ${statusInfo[novo].label}`);}catch(e){toast('Erro: '+e.message,'err');}
+    return;
+  }
+
+  if(novo==='concluido'){
+    const pedido=window._pedidos.find(x=>x._id===id);
+    if(pedido?.produtoId && pedido?.qtdPedida){
+      const prod=window._produtos.find(p=>p._id===pedido.produtoId);
+      if(prod){
+        const qtdVendida=pedido.qtdPedida||1;
+        const estoqueAtual=prod.qtd||0;
+        const novaQtd=Math.max(0, estoqueAtual - qtdVendida);
+        try{
+          await updateDoc(doc(db,'produtos',prod._id),{qtd:novaQtd});
+          await addDoc(colMovimentos,{
+            tipo:'saida',
+            colecao:'produtos',
+            itemId:prod._id,
+            itemNome:prod.nome,
+            quantidade:qtdVendida,
+            unidade:'un.',
+            motivo:`Pedido concluído — Vendido para: ${pedido.cliente}`,
+            pedidoId:id,
+            data:new Date().toISOString(),
+            usuario:auth.currentUser?.email||'—'
+          });
+          toast(`📦 "${prod.nome}" −${qtdVendida} un. do estoque`,'warn');
+        }catch(e){
+          toast('Erro ao deduzir produto: '+e.message,'err');
+        }
+      }
+    }
+    try{
+      await updateDoc(doc(db,'pedidos',id),{status:novo,concluidoEm:new Date().toISOString()});
+      toast(`✅ Pedido concluído!`);
+    }catch(e){toast('Erro: '+e.message,'err');}
+    return;
+  }
+
+  if(novo==='aguardando' && statusAtual==='concluido'){
+    const pedido=window._pedidos.find(x=>x._id===id);
+    if(pedido?.produtoId && pedido?.qtdPedida){
+      if(confirm(`Reabrir pedido? Isso devolverá ${pedido.qtdPedida} un. de "${pedido.produtoNome}" ao estoque.`)){
+        const prod=window._produtos.find(p=>p._id===pedido.produtoId);
+        if(prod){
+          const novaQtd=(prod.qtd||0)+pedido.qtdPedida;
+          try{
+            await updateDoc(doc(db,'produtos',prod._id),{qtd:novaQtd});
+            await addDoc(colMovimentos,{tipo:'entrada',colecao:'produtos',itemId:prod._id,itemNome:prod.nome,quantidade:pedido.qtdPedida,unidade:'un.',motivo:`Pedido reaberto — ${pedido.cliente}`,pedidoId:id,data:new Date().toISOString(),usuario:auth.currentUser?.email||'—'});
+            toast(`📦 ${pedido.qtdPedida} un. devolvidas ao estoque`);
+          }catch(e){toast('Erro: '+e.message,'err');}
+        }
+        try{await updateDoc(doc(db,'pedidos',id),{status:novo,concluidoEm:''});toast(`Status → ${statusInfo[novo].label}`);}catch(e){toast('Erro: '+e.message,'err');}
+      }
+      return;
+    }
+    try{await updateDoc(doc(db,'pedidos',id),{status:novo,concluidoEm:''});toast(`Status → ${statusInfo[novo].label}`);}catch(e){toast('Erro: '+e.message,'err');}
+    return;
+  }
+
+  try{
+    await updateDoc(doc(db,'pedidos',id),{status:novo});
+    toast(`Status → ${statusInfo[novo].label}`);
+  }catch(e){toast('Erro: '+e.message,'err');}
+};
+
+// ── FOTO DO PEDIDO ────────────────────────────────────
+window.abrirModalFoto = function(id, fotoAtual){
+  window._fotoCtx={id,fotoAtual};
+  document.getElementById('foto-file-input').value='';
+  document.getElementById('foto-url-input').value=fotoAtual||'';
+  const prevWrap=document.getElementById('foto-preview-wrap');
+  const prevImg=document.getElementById('foto-preview-img');
+  if(fotoAtual){prevImg.src=fotoAtual;prevWrap.style.display='block';}
+  else{prevWrap.style.display='none';}
+  document.getElementById('upload-progress').style.display='none';
+  document.getElementById('upload-progress-fill').style.width='0%';
+  document.getElementById('modal-foto').classList.add('open');
+};
+window.previewFoto = function(input){
+  const file=input.files[0];
+  if(!file) return;
+  if(file.size>5*1024*1024){toast('Imagem muito grande (máx 5MB)','err');return;}
+  const reader=new FileReader();
+  reader.onload=e=>{document.getElementById('foto-preview-img').src=e.target.result;document.getElementById('foto-preview-wrap').style.display='block';};
+  reader.readAsDataURL(file);
+};
+window.salvarFotoPedido = async function(){
+  if(!window._fotoCtx) return;
+  const {id}=window._fotoCtx;
+  const fileInput=document.getElementById('foto-file-input');
+  const urlInput=document.getElementById('foto-url-input').value.trim();
+  if(fileInput.files[0]){
+    const file=fileInput.files[0];
+    const ext=file.name.split('.').pop();
+    const storRef=ref(storage,`pedidos/${id}/foto_${Date.now()}.${ext}`);
+    const progressBar=document.getElementById('upload-progress');
+    const progressFill=document.getElementById('upload-progress-fill');
+    progressBar.style.display='block';
+    const task=uploadBytesResumable(storRef,file);
+    task.on('state_changed',
+      snap=>{progressFill.style.width=Math.round(snap.bytesTransferred/snap.totalBytes*100)+'%';},
+      err=>{toast('Erro no upload: '+err.message,'err');},
+      async()=>{
+        const url=await getDownloadURL(task.snapshot.ref);
+        await updateDoc(doc(db,'pedidos',id),{fotoUrl:url,fotoPath:storRef.fullPath});
+        toast('Foto salva ✓');document.getElementById('modal-foto').classList.remove('open');
+      }
+    );
+  } else if(urlInput){
+    try{await updateDoc(doc(db,'pedidos',id),{fotoUrl:urlInput,fotoPath:''});toast('Foto salva ✓');document.getElementById('modal-foto').classList.remove('open');}
+    catch(e){toast('Erro: '+e.message,'err');}
+  } else {toast('Selecione uma imagem ou cole uma URL','err');}
+};
+window.removerFotoPedido = async function(){
+  if(!window._fotoCtx) return;
+  const {id}=window._fotoCtx;
+  if(!confirm('Remover foto deste pedido?')) return;
+  try{
+    const p=window._pedidos.find(x=>x._id===id);
+    if(p?.fotoPath){try{await deleteObject(ref(storage,p.fotoPath));}catch(e){}}
+    await updateDoc(doc(db,'pedidos',id),{fotoUrl:'',fotoPath:''});
+    toast('Foto removida');document.getElementById('modal-foto').classList.remove('open');
+  }catch(e){toast('Erro: '+e.message,'err');}
+};
+
+// ── FILTROS ──────────────────────────────────────────
+window.filtrarPedidos = function(status,btn){
+  window._filtroStatus=status;
+  document.querySelectorAll('.status-filter-btn').forEach(b=>b.className='status-filter-btn');
+  const clsMap={todos:'active-todos',aguardando:'active-aguardando',producao:'active-producao',concluido:'active-concluido',pago:'active-concluido',pendente_pag:'active-aguardando'};
+  btn.classList.add(clsMap[status]||'active-todos');
+  renderPedidos();
+};
+window.filtrarPedidosBusca = ()=>renderPedidos();
+window.filtrarLista = function(tipo){
+  const q=(tipo==='filamentos'?document.getElementById('search-fil'):document.getElementById('search-prod')).value.toLowerCase();
+  const dados=tipo==='filamentos'?window._filamentos:window._produtos;
+  const f=dados.filter(d=>tipo==='filamentos'?((d.marca||'').toLowerCase().includes(q)||(d.cor||'').toLowerCase().includes(q)):((d.nome||'').toLowerCase().includes(q)||(d.desc||'').toLowerCase().includes(q)));
+  renderLista(tipo,f);
+};
+
+// ── FILTRO INLINE BARRAS DASHBOARD ──────────────────────
+window.filtrarDashFil = function(){
+  const q=(document.getElementById('dash-fil-search-input')?.value||'').toLowerCase().trim();
+  const wrap=document.getElementById('dash-fil-bars');
+  if(!wrap) return;
+  const items=wrap.querySelectorAll('.fil-bar-item');
+  items.forEach(item=>{
+    const title=(item.getAttribute('title')||'').toLowerCase();
+    item.style.display=(q===''||title.includes(q))?'':'none';
+  });
+};
+
+// ── RENDER FILAMENTOS / PRODUTOS ─────────────────────
+function renderLista(tipo,dados){
+  const el=document.getElementById(tipo==='filamentos'?'lista-filamentos':'lista-produtos');
+  if(!dados.length){el.innerHTML=`<div class="empty-state"><div class="empty-icon">${tipo==='filamentos'?'🧵':'📦'}</div>Nenhum item encontrado.</div>`;return;}
+  el.innerHTML='';
+  dados.forEach(d=>{
+    const div=document.createElement('div');
+    if(tipo==='filamentos'){
+      const esg=d.qtd<=0,low=!esg&&d.qtd<200,und=d.unidade||'g';
+      div.className='item-card'+(esg?' esgotado':'');
+      div.innerHTML=`
+        <div class="item-name">${d.cor} ${esg?'<span class="badge badge-esgotado">ESGOTADO</span>':low?'<span class="badge badge-low">CRÍTICO</span>':'<span class="badge badge-ok">OK</span>'}</div>
+        <div class="item-sub">${d.marca}${d.tipo?' · '+d.tipo:''}</div>
+        <div class="item-qty">${d.qtd} ${und}</div>
+        <div class="item-unit-info">
+          ${d.precoKg?`<span>💰 <strong>R$ ${Number(d.precoKg).toFixed(2)}/kg</strong></span>`:'<span style="color:var(--red)">⚠️ Sem preço cadastrado</span>'}
+        </div>
+        <div class="card-actions">
+          <button class="btn-sm btn-edit" onclick="abrirModal('filamentos','${d._id}','${d.cor} (${d.marca})',${d.qtd},'${und}')">✏️ Editar Qtd</button>
+          <button class="btn-sm btn-delete" onclick="excluirItem('filamentos','${d._id}','${d.cor}')">🗑️</button>
+        </div>
+        <small style="color:var(--muted);font-size:11px;margin-top:8px;display:block">Por: ${d.adicionadoPor||'Sistema'}</small>`;
+    } else {
+      const esg=d.qtd<=0,low=!esg&&d.qtd<=2;
+      const receita=getProdutoReceita(d);
+      const totalFil=receitaTotalGramas(receita);
+      const totalFilStr=totalFil>0?`${(totalFil*(d.qtd||0)).toFixed(1)}g`:'—';
+      div.className='item-card'+(esg?' esgotado':'');
+
+      let priceHtml='';
+      if(d.precoVenda||d.custoProducao){
+        // Calcula lucro estimado para exibição
+        const lucroEst=d.precoVenda&&d.custoProducao?d.precoVenda-d.custoProducao:null;
+        const margemEst=lucroEst&&d.precoVenda?(lucroEst/d.precoVenda*100):null;
+        priceHtml=`<div class="item-price-info">`;
+        if(d.precoVenda) priceHtml+=`<span class="price-venda">💰 Venda: <strong>${fmt(d.precoVenda)}</strong></span>`;
+        if(d.custoProducao) priceHtml+=`<span class="price-custo">🏭 Custo: <strong>${fmt(d.custoProducao)}</strong></span>`;
+        if(lucroEst!==null) priceHtml+=`<span class="price-margem">📈 Lucro: <strong>${fmt(lucroEst)} (${margemEst?.toFixed(0)}%)</strong></span>`;
+        priceHtml+=`</div>`;
+      }
+
+      let receitaHtml='';
+      if(receita.length>0){
+        receitaHtml=`<div class="receita-mini">${receita.map(r=>`<span class="receita-mini-tag">${r.label} ${r.gramas}g</span>`).join('')}</div>`;
+      }
+
+      const imgHover=buildImgHover(d.img,d.nome);
+
+      let btns=`<button class="btn-sm btn-edit" onclick="abrirModalEditProduto('${d._id}')">✏️ Editar</button>`;
+      if(d.calcData||d.precoVenda) btns+=`<button class="btn-sm btn-calc" onclick="abrirCalculadoraComProduto('${d._id}')">🧮 Precificar</button>`;
+
+      if(d.receita&&d.receita.length>0){
+        let custoAtual=0;
+        let temPreco=false;
+        d.receita.forEach(r=>{
+          const fil=window._filamentos.find(f=>f._id===r.filId);
+          if(fil?.precoKg&&r.gramas>0){custoAtual+=(r.gramas/1000)*fil.precoKg;temPreco=true;}
+        });
+        if(temPreco){
+          const custoSalvo=d.custoProducao||0;
+          const desatualizado=custoSalvo>0&&Math.abs(custoAtual-custoSalvo)/custoSalvo>0.01;
+          btns+=`<button class="btn-sm btn-recalcular${desatualizado?' desatualizado':''}" onclick="recalcularCustoProduto('${d._id}')" title="${desatualizado?`Custo desatualizado! Salvo: ${fmt(custoSalvo)} | Atual: ${fmt(custoAtual)}`:'Recalcular custo com preços atuais'}">${desatualizado?'⚠️ Custo':'🔄 Custo'}</button>`;
+        }
+      }
+
+      btns+=`<button class="btn-sm btn-delete" onclick="excluirItem('produtos','${d._id}','${d.nome.replace(/'/g,"\\'")}')">🗑️</button>`;
+
+      div.innerHTML=`
+        <div class="item-name">${d.nome} ${esg?'<span class="badge badge-esgotado">ESGOTADO</span>':low?'<span class="badge badge-low">CRÍTICO</span>':'<span class="badge badge-ok">OK</span>'}</div>
+        <div class="item-sub">${d.desc||'—'}</div>
+        <div class="item-qty">${d.qtd} un.</div>
+        <div class="item-unit-info">
+          <span>⏱️ <strong>${d.tempo||'—'}</strong> por unidade</span>
+          <span>⚖️ <strong>${totalFil>0?totalFil.toFixed(1)+'g':'—'}</strong> por unidade</span>
+          ${d.qtd>1&&totalFil>0?`<span style="color:var(--neon);margin-top:2px">📦 Total estoque: ${totalFilStr} · ${multiplicarTempo(d.tempo,d.qtd)}</span>`:''}
+        </div>
+        ${receitaHtml}
+        ${priceHtml}
+        <div class="card-actions">${btns}</div>
+        <small style="color:var(--muted);font-size:11px;margin-top:8px;display:block">Por: ${d.adicionadoPor||'Sistema'}</small>
+        ${imgHover}`;
+    }
+    el.appendChild(div);
+  });
+}
+
+// ── RENDER PEDIDOS ────────────────────────────────────
+function renderPedidos(){
+  const el=document.getElementById('lista-pedidos');
+  const busca=document.getElementById('search-ped').value.toLowerCase();
+  const periodo=document.getElementById('filtro-periodo')?.value||'';
+  let dados=window._pedidos;
+
+  if(window._filtroStatus==='pago'){
+    dados=dados.filter(p=>p.pagamentoStatus==='pago');
+  } else if(window._filtroStatus==='pendente_pag'){
+    dados=dados.filter(p=>!p.pagamentoStatus||p.pagamentoStatus==='pendente'||p.pagamentoStatus==='parcial');
+  } else if(window._filtroStatus!=='todos'){
+    dados=dados.filter(p=>p.status===window._filtroStatus);
+  }
+
+  if(periodo){
+    dados=dados.filter(p=>(p.dataPedido||'').startsWith(periodo));
+  }
+
+  if(busca) dados=dados.filter(p=>(p.cliente||'').toLowerCase().includes(busca)||(p.produtoNome||'').toLowerCase().includes(busca)||(p.desc||'').toLowerCase().includes(busca));
+
+  dados=[...dados].sort((a,b)=>{
+    if(a.status==='concluido'&&b.status!=='concluido') return 1;
+    if(a.status!=='concluido'&&b.status==='concluido') return -1;
+    return (a.dataEntrega||'').localeCompare(b.dataEntrega||'');
+  });
+
+  const resumoEl=document.getElementById('periodo-resumo');
+  if(resumoEl && periodo){
+    const total=dados.reduce((s,p)=>{
+      const prod=window._produtos.find(x=>x._id===p.produtoId);
+      return s+(prod?.precoVenda||0)*(p.qtdPedida||1);
+    },0);
+    const pagos=dados.filter(p=>p.pagamentoStatus==='pago').reduce((s,p)=>{
+      return s+(p.valorPago||0);
+    },0);
+    resumoEl.textContent=`${dados.length} pedido(s) · ${fmt(total)} esperado · ${fmt(pagos)} recebido`;
+  } else if(resumoEl){
+    resumoEl.textContent='';
+  }
+
+  if(!dados.length){el.innerHTML=`<div class="empty-state"><div class="empty-icon">🛒</div>Nenhum pedido encontrado.</div>`;return;}
+  el.innerHTML='';
+
+  const formaLabels={pix:'PIX',dinheiro:'Dinheiro',cartao_credito:'Cartão Crédito',cartao_debito:'Cartão Débito',transferencia:'Transferência',outro:'Outro'};
+
+  dados.forEach(p=>{
+    const si=statusInfo[p.status||'aguardando']||statusInfo.aguardando;
+    const prazo=p.status!=='concluido'?prazoInfo(p.dataEntrega):null;
+    const qtd=p.qtdPedida||1;
+
+    // Badge pagamento
+    const pagSt=p.pagamentoStatus||'pendente';
+    const pagMap={pago:{cls:'pagamento-pago',icon:'✅',label:'Pago'},parcial:{cls:'pagamento-parcial',icon:'⚡',label:'Parcial'},pendente:{cls:'pagamento-pendente',icon:'💳',label:'Pendente'}};
+    const pagInfo=pagMap[pagSt]||pagMap.pendente;
+    const prod=window._produtos.find(x=>x._id===p.produtoId);
+    const valorTotal=prod?.precoVenda?(prod.precoVenda*qtd):0;
+    const valorPago=p.valorPago||0;
+    let pagBadgeExtra='';
+    if(pagSt==='parcial'&&valorTotal>0){
+      const falta=valorTotal-valorPago;
+      pagBadgeExtra=`<span style="font-size:11px;color:var(--amber);margin-left:4px">${fmt(valorPago)} / ${fmt(valorTotal)} · falta ${fmt(falta)}</span>`;
+    } else if(pagSt==='pago'&&valorPago>0){
+      pagBadgeExtra=`<span style="font-size:11px;color:var(--neon);margin-left:4px">${fmt(valorPago)}</span>`;
+    } else if(pagSt==='pendente'&&valorTotal>0){
+      pagBadgeExtra=`<span style="font-size:11px;color:var(--red);margin-left:4px">A receber: ${fmt(valorTotal)}</span>`;
+    }
+    const formaLabel=p.formaPagamento?` · ${formaLabels[p.formaPagamento]||p.formaPagamento}`:'';
+    const pagRow=`<div class="pagamento-row"><span class="pagamento-badge ${pagInfo.cls}">${pagInfo.icon} ${pagInfo.label}${formaLabel}</span>${pagBadgeExtra}</div>`;
+
+    // ── NOVO: Lucro estimado por pedido ──────────────────
+    let lucroHtml='';
+    if(prod?.precoVenda && prod?.custoProducao){
+      const lucroUn=prod.precoVenda-prod.custoProducao;
+      const lucroTotal=lucroUn*qtd;
+      const margemPct=prod.precoVenda>0?(lucroUn/prod.precoVenda*100):0;
+      const lucroCls=margemPct>=25?'bom':margemPct>=10?'medio':'ruim';
+      lucroHtml=`<span class="pedido-lucro ${lucroCls}" title="Lucro estimado: ${fmt(lucroUn)}/un × ${qtd} un.">📈 ${fmt(lucroTotal)} (${margemPct.toFixed(0)}%)</span>`;
+    }
+
+    let consumoHtml='';
+    if(p.produtoId&&prod){
+      const c=calcularConsumoPedido(prod,qtd);
+      consumoHtml=`<div class="pedido-consumo">
+        <div class="consumo-item">📦 <strong>${qtd} un.</strong></div>
+        <span class="consumo-divider">·</span>
+        <div class="consumo-item">⚖️ <strong>${c.filamento.toFixed(1)}g</strong></div>
+        <span class="consumo-divider">·</span>
+        <div class="consumo-item">⏱️ <strong>${multiplicarTempo(prod.tempo,qtd)}</strong></div>
+        ${lucroHtml?`<span class="consumo-divider">·</span><div class="consumo-item">${lucroHtml}</div>`:''}
+      </div>`;
+    }
+    const fotoHtml=p.fotoUrl?`<img src="${p.fotoUrl}" alt="Foto" class="pedido-photo">`:'';
+    const concluidoHtml=p.status==='concluido'&&p.concluidoEm?`<span class="concluded-at">Concluído em ${formatDate(p.concluidoEm.split('T')[0])}</span>`:'';
+    const div=document.createElement('div');
+    div.className=`pedido-card status-${p.status||'aguardando'}`;
+    div.innerHTML=`
+      <div class="pedido-card-inner">
+        <div class="status-toggle-wrap">
+          <button class="status-cycle-btn s-${p.status||'aguardando'}" onclick="ciclarStatus('${p._id}','${p.status||'aguardando'}')" title="Avançar status">${si.icon}</button>
+          <div class="status-cycle-label">${si.label.replace('Em ','')}</div>
+        </div>
+        <div class="pedido-body">
+          <div class="pedido-title">${p.cliente} <span class="badge ${si.cls}">${si.label}</span>${p.prioridade==='alta'?'<span class="badge" style="background:var(--red-dim);color:var(--red);border-color:rgba(239,68,68,0.25)">⚡ Alta</span>':''}</div>
+          <div class="pedido-cliente">${p.produtoNome?`Produto: <strong>${p.produtoNome}</strong> &nbsp;·&nbsp; `:''}Criado por: ${p.criadoPor||'—'}</div>
+          ${pagRow}
+          ${consumoHtml}
+          <div class="pedido-meta">
+            <div class="pedido-meta-item">📅 <span>Pedido:</span><strong>${formatDate(p.dataPedido)}</strong></div>
+            <div class="pedido-meta-item${prazo&&(prazo.cls==='prazo-over'||prazo.cls==='prazo-warn')?' overdue':''}">🚚 <span>Entrega:</span><strong>${formatDate(p.dataEntrega)}</strong>${prazo?`<span class="${prazo.cls}" style="margin-left:4px;font-size:11px">(${prazo.label})</span>`:''}</div>
+          </div>
+          ${p.desc?`<div class="pedido-notes">${p.desc}</div>`:''}
+          ${p.obs?`<div class="pedido-notes" style="border-left-color:var(--purple-border)">📋 ${p.obs}</div>`:''}
+          ${concluidoHtml}
+          ${fotoHtml}
+          <div class="pedido-actions">
+            <button class="btn-sm btn-edit" onclick="abrirModalEditPedido('${p._id}')">✏️ Editar</button>
+            <button class="btn-sm" style="background:var(--purple-dim);color:var(--purple);border:1px solid var(--purple-border)" onclick="abrirModalFoto('${p._id}','${p.fotoUrl||''}')">📷 Foto</button>
+            <button class="btn-sm btn-delete" onclick="excluirItem('pedidos','${p._id}','Pedido de ${p.cliente}')">🗑️</button>
+          </div>
+        </div>
+      </div>`;
+    el.appendChild(div);
+  });
+}
+
+// ── RENDER HISTÓRICO ──────────────────────────────────
+function renderHistorico(dados){
+  const el=document.getElementById('lista-historico');
+  if(!dados||!dados.length){el.innerHTML='<div class="empty-state"><div class="empty-icon">📋</div>Nenhuma movimentação registrada.</div>';return;}
+  const sorted=[...dados].sort((a,b)=>b.data.localeCompare(a.data));
+  el.innerHTML='';
+  sorted.forEach(m=>{
+    const div=document.createElement('div');div.className='historico-item';
+    const icon=m.tipo==='entrada'?'📥':'📤';
+    div.innerHTML=`<span class="mov-icon">${icon}</span><div class="mov-info"><div class="mov-desc">${m.itemNome} — ${m.motivo||'—'}</div><div class="mov-date">${formatDateTime(m.data)} · ${m.usuario}</div></div><span class="mov-qty ${m.tipo}">${m.tipo==='entrada'?'+':'-'}${m.quantidade} ${m.unidade||''}</span>`;
+    el.appendChild(div);
+  });
+}
+window.filtrarHistorico = function(){
+  const q=document.getElementById('search-hist').value.toLowerCase();
+  renderHistorico(window._movimentos.filter(m=>(m.itemNome||'').toLowerCase().includes(q)||(m.motivo||'').toLowerCase().includes(q)));
+};
+
+// ── DASHBOARD ─────────────────────────────────────────
+let _dashFatChart = null;
+
+// Função auxiliar para renderizar as barras de filamentos no dashboard
+// ────────────────────────────────────────────────────────────────────────────
+// CORREÇÃO PRINCIPAL: Remove o .slice(0,8) e ordena por consumo
+// ────────────────────────────────────────────────────────────────────────────
+function renderDashFilBars(consumoMap){
+  const fils=window._filamentos;
+  const barsDiv=document.getElementById('dash-fil-bars');
+  if(!barsDiv) return;
+
+  if(!fils.length){
+    barsDiv.innerHTML='<div class="alert-empty">Nenhum filamento cadastrado</div>';
+    window._dashFilBarsCache=[];
+    return;
+  }
+
+  // ORDENAÇÃO CORRIGIDA: esgotado > crítico > TEM consumo (maior consumo primeiro) > sem consumo
+  const filsOrdenados = [...fils].sort((a,b)=>{
+    const aEsg=a.qtd<=0, bEsg=b.qtd<=0;
+    const aQtdG=a.unidade==='kg'?a.qtd*1000:a.qtd;
+    const bQtdG=b.unidade==='kg'?b.qtd*1000:b.qtd;
+    const aLow=!aEsg && aQtdG<200;
+    const bLow=!bEsg && bQtdG<200;
+    const aConsumo=consumoMap[a._id]||0;
+    const bConsumo=consumoMap[b._id]||0;
+
+    // Prioridade 1: esgotados primeiro
+    if(aEsg&&!bEsg) return -1;
+    if(!aEsg&&bEsg) return 1;
+    // Prioridade 2: críticos (< 200g) primeiro
+    if(aLow&&!bLow) return -1;
+    if(!aLow&&bLow) return 1;
+    // Prioridade 3: filamentos COM consumo registrado primeiro
+    if(aConsumo>0&&bConsumo<=0) return -1;
+    if(aConsumo<=0&&bConsumo>0) return 1;
+    // Prioridade 4: dentro dos que têm consumo, maior consumo primeiro
+    if(aConsumo>0&&bConsumo>0) return bConsumo-aConsumo;
+    return 0;
+  });
+
+  // TODOS os filamentos são mostrados (sem .slice(0,8))
+  const htmlItems = filsOrdenados.map(f=>{
+    const qG=f.unidade==='kg'?f.qtd*1000:f.qtd;
+    const consumoG=consumoMap[f._id]||0;
+    const estoqueOriginalG=qG+consumoG;
+    const pct=estoqueOriginalG>0?Math.min(100,Math.round((qG/estoqueOriginalG)*100)):0;
+    const esgotado=qG<=0, critico=!esgotado&&qG<200;
+    const temConsumo=consumoG>0.001;
+    const qtdDisplay=f.unidade==='kg'?`${f.qtd}kg`:f.qtd>=1000?`${(f.qtd/1000).toFixed(2)}kg`:`${f.qtd}g`;
+    let consumoHtml='';
+    if(temConsumo){
+      const consumoDisplay=consumoG>=1000?`${(consumoG/1000).toFixed(3)}kg`:`${consumoG.toFixed(1)}g`;
+      consumoHtml=`<span class="consumed">▼ ${consumoDisplay} consumido</span>`;
+    }
+    const barClass=esgotado?'esgotado':critico?'low':'';
+    const titleAttr=`${f.cor} (${f.marca})${f.precoKg?' | R$'+Number(f.precoKg).toFixed(2)+'/kg':''}`;
+    return `<div class="fil-bar-item" title="${titleAttr}">
+      <div class="fil-bar-label">
+        <span class="name">${f.cor} <small style="color:var(--muted)">${f.marca}</small>${esgotado?'<span style="margin-left:6px;font-size:10px;color:var(--red);font-family:var(--font-mono)">ESGOTADO</span>':critico?'<span style="margin-left:6px;font-size:10px;color:var(--amber);font-family:var(--font-mono)">CRÍTICO</span>':temConsumo?'<span style="margin-left:6px;font-size:10px;color:var(--blue);font-family:var(--font-mono)">EM USO</span>':''}</span>
+        <span class="qty">${qtdDisplay}</span>
+      </div>
+      <div class="fil-bar-track"><div class="fil-bar-fill${barClass?' '+barClass:''}" style="width:${esgotado?100:pct}%"></div></div>
+      <div class="fil-bar-meta">
+        <span>${esgotado?'⚠️ Repor estoque':temConsumo?`${pct}% disponível do estoque inicial`:`Disponível: ${pct}%`}</span>
+        ${consumoHtml}
+      </div>
+      ${f.precoKg?`<div class="fil-bar-preco">💰 R$${Number(f.precoKg).toFixed(2)}/kg</div>`:''}
+    </div>`;
+  });
+
+  barsDiv.innerHTML = htmlItems.join('');
+  window._dashFilBarsCache = htmlItems;
+}
+
+function atualizarDashboard(){
+  const fils=window._filamentos,prods=window._produtos,peds=window._pedidos;
+  const filTotal=fils.length,filEsg=fils.filter(f=>f.qtd<=0).length;
+  const prodTotal=prods.length,prodEsg=prods.filter(p=>p.qtd<=0).length;
+  const totalEsg=filEsg+prodEsg;
+  const filCrit=fils.filter(f=>f.qtd>0&&f.qtd<200).length;
+  const prodCrit=prods.filter(p=>p.qtd>0&&p.qtd<=2).length;
+  const totalAlertas=totalEsg+filCrit+prodCrit;
+  const pedsAbertos=peds.filter(p=>p.status!=='concluido').length;
+  const hoje=new Date().toISOString().split('T')[0];
+  const anoAtual=new Date().getFullYear();
+  const mesAtual=new Date().getMonth();
+
+  let valorAbertos = 0;
+  peds.filter(p=>p.status!=='concluido').forEach(p=>{
+    const prod = prods.find(x=>x._id===p.produtoId);
+    if(prod?.precoVenda) valorAbertos += prod.precoVenda * (p.qtdPedida||1);
+  });
+
+  const pedsConcluidosMes = peds.filter(p=>{
+    if(p.status!=='concluido') return false;
+    const dataRef = p.concluidoEm || p.dataPedido || '';
+    return dataRef.startsWith(`${anoAtual}-${String(mesAtual+1).padStart(2,'0')}`);
+  });
+  const faturadoMes = pedsConcluidosMes.reduce((s,p)=>{
+    const prod = prods.find(x=>x._id===p.produtoId);
+    return s + (prod?.precoVenda||0)*(p.qtdPedida||1);
+  },0);
+
+  // ── NOVO: Lucro estimado do mês ──────────────────────
+  const lucroMes = pedsConcluidosMes.reduce((s,p)=>{
+    const prod = prods.find(x=>x._id===p.produtoId);
+    if(!prod?.precoVenda || !prod?.custoProducao) return s;
+    return s + (prod.precoVenda - prod.custoProducao)*(p.qtdPedida||1);
+  },0);
+
+  const pedsHoje=peds.filter(p=>p.status==='concluido'&&(p.concluidoEm||'').startsWith(hoje)).length;
+
+  // KPI tempo semana
+  const pedsProducaoSemana = peds.filter(p=>p.status==='producao'||p.status==='aguardando');
+  let minutosTotaisSemana = 0;
+  pedsProducaoSemana.forEach(p=>{
+    const prod = prods.find(x=>x._id===p.produtoId);
+    if(!prod?.tempo) return;
+    const h=parseInt((prod.tempo.match(/(\d+)\s*h/)||[])[1])||0;
+    const m=parseInt((prod.tempo.match(/(\d+)\s*m/)||[])[1])||0;
+    minutosTotaisSemana += (h*60+m)*(p.qtdPedida||1);
+  });
+  const horasSemana=Math.floor(minutosTotaisSemana/60);
+  const minSemana=minutosTotaisSemana%60;
+  const tempoSemanaStr=minutosTotaisSemana>0?(horasSemana>0?`${horasSemana}h${minSemana>0?` ${minSemana}m`:''}`:minSemana>0?`${minSemana}m`:'0h'):'0h';
+
+  document.getElementById('kpi-fil-total').textContent=filTotal;
+  document.getElementById('kpi-fil-sub').textContent=filEsg>0?`${filEsg} esgotado(s)`:'todos com estoque';
+  document.getElementById('kpi-prod-total').textContent=prodTotal;
+  document.getElementById('kpi-prod-sub').textContent=prodEsg>0?`${prodEsg} esgotado(s)`:'todos disponíveis';
+  document.getElementById('kpi-alertas').textContent=totalAlertas;
+  document.getElementById('kpi-esgotados').textContent=totalEsg;
+  document.getElementById('kpi-ped-abertos').textContent=pedsAbertos;
+  document.getElementById('kpi-ped-sub').textContent=valorAbertos>0?`≈ ${fmt(valorAbertos)} em aberto`:(pedsHoje>0?`${pedsHoje} concluído(s) hoje`:`${peds.filter(p=>p.status==='concluido').length} concluído(s) total`);
+
+  const kpiFat=document.getElementById('kpi-faturado-mes');
+  const kpiFatSub=document.getElementById('kpi-faturado-sub');
+  if(kpiFat){
+    if(faturadoMes>0){
+      kpiFat.textContent=faturadoMes>=1000?`${(faturadoMes/1000).toFixed(1)}k`:faturadoMes.toFixed(0);
+      kpiFatSub.textContent=`${pedsConcluidosMes.length} pedido(s) concluído(s)`;
+    } else {
+      kpiFat.textContent='R$0';
+      kpiFatSub.textContent='nenhum concluído este mês';
+    }
+  }
+
+  // ── NOVO: KPI Lucro do mês ───────────────────────────
+  const kpiLucro=document.getElementById('kpi-lucro-mes');
+  const kpiLucroSub=document.getElementById('kpi-lucro-sub');
+  if(kpiLucro){
+    if(lucroMes>0){
+      kpiLucro.textContent=lucroMes>=1000?`${(lucroMes/1000).toFixed(1)}k`:lucroMes.toFixed(0);
+      kpiLucroSub.textContent=faturadoMes>0?`${(lucroMes/faturadoMes*100).toFixed(0)}% de margem`:'venda − custo';
+    } else {
+      kpiLucro.textContent='—';
+      kpiLucroSub.textContent='sem dados de custo';
+    }
+  }
+
+  const kpiTempo=document.getElementById('kpi-tempo-semana');
+  const kpiTempoSub=document.getElementById('kpi-tempo-semana-sub');
+  if(kpiTempo){
+    kpiTempo.textContent=tempoSemanaStr;
+    kpiTempoSub.textContent=`${pedsProducaoSemana.length} pedido(s) em aberto`;
+  }
+
+  const badge=document.getElementById('badge-pedidos-pendentes');
+  if(pedsAbertos>0){badge.textContent=pedsAbertos;badge.style.display='inline-flex';}else badge.style.display='none';
+
+  // ── GRÁFICO FATURAMENTO MENSAL ──────────────────────────
+  const mesesLabels=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+  const fatPorMes=new Array(12).fill(0);
+  const receitoPorMes=new Array(12).fill(0);
+  const lucroPorMes=new Array(12).fill(0);
+  peds.filter(p=>p.status==='concluido').forEach(p=>{
+    const dataRef=p.concluidoEm||p.dataPedido||'';
+    const ano=parseInt(dataRef.substring(0,4));
+    const mes=parseInt(dataRef.substring(5,7))-1;
+    if(ano===anoAtual&&mes>=0&&mes<=11){
+      const prod=prods.find(x=>x._id===p.produtoId);
+      const venda=(prod?.precoVenda||0)*(p.qtdPedida||1);
+      const custo=(prod?.custoProducao||0)*(p.qtdPedida||1);
+      fatPorMes[mes]+=venda;
+      receitoPorMes[mes]+=(p.valorPago||0);
+      lucroPorMes[mes]+=(venda>0&&custo>0)?venda-custo:0;
+    }
+  });
+  const totalAno=fatPorMes.reduce((s,v)=>s+v,0);
+  const totalLucroAno=lucroPorMes.reduce((s,v)=>s+v,0);
+  const mesesComDados=fatPorMes.filter(v=>v>0);
+  const mediaAno=mesesComDados.length>0?totalAno/mesesComDados.length:0;
+  const melhorMesIdx=fatPorMes.indexOf(Math.max(...fatPorMes));
+  const melhorMesLabel=totalAno>0?`${mesesLabels[melhorMesIdx]}: ${fmt(fatPorMes[melhorMesIdx])}`:'—';
+
+  const chartAnoEl=document.getElementById('dash-chart-ano');
+  if(chartAnoEl) chartAnoEl.textContent=anoAtual;
+  const melhorEl=document.getElementById('chart-melhor-mes');
+  const mediaEl=document.getElementById('chart-media-mes');
+  const totalEl=document.getElementById('chart-total-ano');
+  const lucroAnoEl=document.getElementById('chart-lucro-ano');
+  if(melhorEl) melhorEl.textContent=melhorMesLabel;
+  if(mediaEl) mediaEl.textContent=totalAno>0?fmt(mediaAno):'—';
+  if(totalEl) totalEl.textContent=totalAno>0?fmt(totalAno):'R$ 0';
+  if(lucroAnoEl) lucroAnoEl.textContent=totalLucroAno>0?fmt(totalLucroAno):'—';
+
+  const chartCanvas=document.getElementById('dash-faturamento-chart');
+  if(chartCanvas){
+    if(_dashFatChart){_dashFatChart.destroy();_dashFatChart=null;}
+    _dashFatChart=new Chart(chartCanvas.getContext('2d'),{
+      type:'bar',
+      data:{
+        labels:mesesLabels,
+        datasets:[
+          {label:'Faturado (R$)',data:fatPorMes,backgroundColor:fatPorMes.map((_,i)=>i===mesAtual?'rgba(0,255,163,0.7)':'rgba(0,255,163,0.25)'),borderColor:fatPorMes.map((_,i)=>i===mesAtual?'#00ffa3':'rgba(0,255,163,0.4)'),borderWidth:1,borderRadius:4},
+          {label:'Recebido (R$)',data:receitoPorMes,backgroundColor:'rgba(59,130,246,0.35)',borderColor:'rgba(59,130,246,0.6)',borderWidth:1,borderRadius:4},
+          {label:'Lucro Est. (R$)',data:lucroPorMes,backgroundColor:'rgba(20,184,166,0.3)',borderColor:'rgba(20,184,166,0.6)',borderWidth:1,borderRadius:4}
+        ]
+      },
+      options:{
+        responsive:true,maintainAspectRatio:true,
+        plugins:{legend:{labels:{color:'#6b6b80',font:{size:11},padding:12,boxWidth:10}},tooltip:{callbacks:{label:ctx=>` ${ctx.dataset.label}: ${fmt(ctx.raw)}`}}},
+        scales:{
+          x:{ticks:{color:'#6b6b80',font:{size:11}},grid:{color:'rgba(255,255,255,0.04)'}},
+          y:{ticks:{color:'#6b6b80',font:{size:11},callback:v=>v>=1000?`${(v/1000).toFixed(1)}k`:v},grid:{color:'rgba(255,255,255,0.04)'}}
+        }
+      }
+    });
+  }
+
+  // Alertas
+  const alertDiv=document.getElementById('dash-alertas');
+  if(totalAlertas===0){alertDiv.innerHTML='<div class="alert-item ok">✓ Nenhum alerta de estoque</div>';}
+  else{
+    let html='';
+    fils.filter(f=>f.qtd<=0).forEach(f=>{html+=`<div class="alert-item danger">🔴 ESGOTADO: ${f.cor} (${f.marca})</div>`;});
+    fils.filter(f=>f.qtd>0&&f.qtd<200).forEach(f=>{html+=`<div class="alert-item warning">⚠️ Filamento crítico: ${f.cor} (${f.qtd}${f.unidade||'g'})</div>`;});
+    prods.filter(p=>p.qtd<=0).forEach(p=>{html+=`<div class="alert-item danger">🔴 Produto ESGOTADO: ${p.nome}</div>`;});
+    prods.filter(p=>p.qtd>0&&p.qtd<=2).forEach(p=>{html+=`<div class="alert-item warning">⚠️ Estoque crítico: ${p.nome} (${p.qtd} un.)</div>`;});
+    alertDiv.innerHTML=html;
+  }
+
+  // ── BARRAS DE CONSUMO — chama função separada com ordenaçao corrigida ──
+  const consumoMap={};
+  window._movimentos
+    .filter(m => m.colecao==='filamentos' && m.tipo==='saida')
+    .forEach(m => { consumoMap[m.itemId] = (consumoMap[m.itemId]||0) + (m.quantidade||0); });
+
+  renderDashFilBars(consumoMap);
+
+  // Produtos críticos
+  const critDiv=document.getElementById('dash-prod-criticos');
+  const criticos=prods.filter(p=>p.qtd<=2).slice(0,4);
+  if(!criticos.length){critDiv.innerHTML='<div class="alert-empty">Nenhum produto crítico</div>';}
+  else{
+    critDiv.innerHTML='';
+    criticos.forEach(p=>{
+      const div=document.createElement('div');div.className='item-card'+(p.qtd<=0?' esgotado':'');
+      div.innerHTML=`<div class="item-name">${p.nome} ${p.qtd<=0?'<span class="badge badge-esgotado">ESGOTADO</span>':'<span class="badge badge-low">CRÍTICO</span>'}</div><div class="item-sub">${p.desc||'—'}</div><div class="item-qty">${p.qtd} un.</div><div class="card-actions"><button class="btn-sm btn-edit" onclick="abrirModalEditProduto('${p._id}')">✏️ Repor</button></div>`;
+      critDiv.appendChild(div);
+    });
+  }
+
+  // Pedidos em andamento
+  const andDiv=document.getElementById('dash-pedidos-andamento');
+  const emAnd=peds.filter(p=>p.status==='producao'||p.status==='aguardando').slice(0,5);
+  if(!emAnd.length){andDiv.innerHTML='<div class="alert-empty">Nenhum pedido em andamento</div>';}
+  else{andDiv.innerHTML=emAnd.map(p=>{const si=statusInfo[p.status||'aguardando'];return `<div class="pedido-mini"><span class="status-dot dot-${p.status||'aguardando'}"></span><div class="pedido-mini-info"><div class="pedido-mini-name">${p.cliente}${p.produtoNome?` — ${p.produtoNome}`:''}</div><div class="pedido-mini-date">Entrega: ${formatDate(p.dataEntrega)}</div></div><span class="badge ${si.cls}">${si.label}</span></div>`;}).join('');}
+
+  // Próximas entregas
+  const entDiv=document.getElementById('dash-proximas-entregas');
+  const proximas=peds.filter(p=>p.status!=='concluido'&&p.dataEntrega).sort((a,b)=>a.dataEntrega.localeCompare(b.dataEntrega)).slice(0,5);
+  if(!proximas.length){entDiv.innerHTML='<div class="alert-empty">Nenhuma entrega prevista</div>';}
+  else{entDiv.innerHTML=proximas.map(p=>{const prazo=prazoInfo(p.dataEntrega);return `<div class="pedido-mini"><span class="status-dot" style="background:${prazo.cls==='prazo-over'?'var(--red)':prazo.cls==='prazo-warn'?'var(--amber)':'var(--neon)'}"></span><div class="pedido-mini-info"><div class="pedido-mini-name">${p.cliente}</div><div class="pedido-mini-date" style="color:${prazo.cls==='prazo-over'?'var(--red)':prazo.cls==='prazo-warn'?'var(--amber)':'var(--muted)'}">${formatDate(p.dataEntrega)} · ${prazo.label}</div></div></div>`;}).join('');}
+}
+
+// ── SELECT PRODUTOS ───────────────────────────────────
+function popularSelectProdutos(){
+  const sel=document.getElementById('ped-produto-id');
+  const cur=sel.value;
+  sel.innerHTML='<option value="">— Selecionar produto —</option>';
+  window._produtos.forEach(p=>{
+    const opt=document.createElement('option');opt.value=p._id;opt.textContent=`${p.nome} (${p.qtd} un.)`;
+    if(p._id===cur) opt.selected=true;sel.appendChild(opt);
+  });
+  if(cur) atualizarConsumoPrevio();
+}
+
+// ── AUTH ─────────────────────────────────────────────
+document.getElementById('btn-login-google').addEventListener('click',()=>signInWithPopup(auth,provider).catch(e=>toast(e.message,'err')));
+document.getElementById('btn-logout').addEventListener('click',()=>signOut(auth));
+let unsubFil,unsubProd,unsubPed,unsubMov;
+
+onAuthStateChanged(auth, user=>{
+  if(user){
+    if(emailsPermitidos.includes(user.email)){
+      document.getElementById('login-screen').classList.remove('active');
+      document.getElementById('app-screen').classList.add('active');
+      document.getElementById('user-name').textContent=user.displayName;
+      document.getElementById('user-photo').src=user.photoURL||'';
+      iniciarEscutadores();
+    } else {toast(`Acesso negado: ${user.email}`,'err');signOut(auth);}
+  } else {
+    document.getElementById('app-screen').classList.remove('active');
+    document.getElementById('login-screen').classList.add('active');
+    [unsubFil,unsubProd,unsubPed,unsubMov].forEach(u=>u&&u());
+  }
+});
+
+function iniciarEscutadores(){
+  if(unsubFil) unsubFil();if(unsubProd) unsubProd();if(unsubPed) unsubPed();if(unsubMov) unsubMov();
+  unsubFil=onSnapshot(colFilamentos,snap=>{
+    window._filamentos=snap.docs.map(d=>({_id:d.id,...d.data()}));
+    document.getElementById('count-fil').textContent=window._filamentos.length;
+    renderLista('filamentos',window._filamentos);
+    atualizarDashboard();
+  });
+  unsubProd=onSnapshot(colProdutos,snap=>{
+    window._produtos=snap.docs.map(d=>({_id:d.id,...d.data()}));
+    document.getElementById('count-prod').textContent=window._produtos.length;
+    renderLista('produtos',window._produtos);
+    popularSelectProdutos();
+    atualizarDashboard();
+  });
+  unsubPed=onSnapshot(colPedidos,snap=>{
+    window._pedidos=snap.docs.map(d=>({_id:d.id,...d.data()}));
+    document.getElementById('count-ped').textContent=window._pedidos.length;
+    renderPedidos();
+    atualizarDashboard();
+  });
+  unsubMov=onSnapshot(colMovimentos,snap=>{
+    window._movimentos=snap.docs.map(d=>({_id:d.id,...d.data()}));
+    renderHistorico(window._movimentos);
+    atualizarDashboard();
+  });
+}
+
+// ── FORMS ────────────────────────────────────────────
+document.getElementById('form-filamento').addEventListener('submit', async function(e){
+  e.preventDefault();
+  const qtd=Number(document.getElementById('fil-qtd').value);
+  const cor=document.getElementById('fil-cor').value;
+  const marca=document.getElementById('fil-marca').value;
+  const unidade=document.getElementById('fil-unidade').value;
+  const precoKg=Number(document.getElementById('fil-preco-kg').value)||0;
+  const tipo=document.getElementById('fil-tipo').value;
+  if(!precoKg){toast('⚠️ Informe o preço por kg para cálculo de custos','warn');}
+  try{
+    const docRef=await addDoc(colFilamentos,{marca,cor,qtd,unidade,precoKg,tipo,criadoEm:Date.now(),adicionadoPor:auth.currentUser.email});
+    await addDoc(colMovimentos,{tipo:'entrada',colecao:'filamentos',itemId:docRef.id,itemNome:`${cor} (${marca})`,quantidade:qtd,unidade,motivo:'Cadastro inicial',data:new Date().toISOString(),usuario:auth.currentUser.email});
+    this.reset();toast('Filamento salvo ✓');
+  }catch(e){toast('Erro: '+e.message,'err')}
+});
+
+document.getElementById('form-produto').addEventListener('submit', async function(e){
+  e.preventDefault();
+  const qtd=Number(document.getElementById('prod-qtd').value);
+  const nome=document.getElementById('prod-nome').value;
+  const receita=getReceita('add');
+  const totalGasto=receitaTotalGramas(receita);
+
+  if(receita.length===0){
+    toast('⚠️ Adicione pelo menos 1 filamento na receita','warn');
+    return;
+  }
+
+  try{
+    const docRef=await addDoc(colProdutos,{
+      nome,
+      desc:document.getElementById('prod-desc').value,
+      qtd,
+      tempo:document.getElementById('prod-tempo').value,
+      receita,
+      gasto:totalGasto,
+      unidade:'g',
+      img:document.getElementById('prod-img').value,
+      criadoEm:Date.now(),
+      adicionadoPor:auth.currentUser.email
+    });
+    if(qtd>0){
+      await addDoc(colMovimentos,{tipo:'entrada',colecao:'produtos',itemId:docRef.id,itemNome:nome,quantidade:qtd,unidade:'un.',motivo:'Cadastro inicial',data:new Date().toISOString(),usuario:auth.currentUser.email});
+    }
+    document.getElementById('add-receita-list').innerHTML='';
+    document.getElementById('add-receita-empty').style.display='block';
+    document.getElementById('add-receita-total').style.display='none';
+    document.getElementById('add-receita-custo').style.display='none';
+    this.reset();
+    toast('Produto salvo ✓');
+  }catch(e){toast('Erro: '+e.message,'err')}
+});
+
+document.getElementById('form-pedido').addEventListener('submit', async function(e){
+  e.preventDefault();
+  const prodId=document.getElementById('ped-produto-id').value;
+  const prodNome=prodId?(window._produtos.find(p=>p._id===prodId)?.nome||''):'';
+  const qtd=prodId?(parseInt(document.getElementById('ped-qtd').value)||1):1;
+  if(prodId){
+    const prod=window._produtos.find(p=>p._id===prodId);
+    if(prod&&(prod.qtd||0)<qtd&&!confirm(`⚠️ Estoque insuficiente!\nProduto tem ${prod.qtd} un., pedido quer ${qtd} un.\nDeseja registrar mesmo assim?`)) return;
+  }
+  try{
+    await addDoc(colPedidos,{
+      cliente:document.getElementById('ped-cliente').value,
+      desc:document.getElementById('ped-desc').value,
+      obs:document.getElementById('ped-obs').value,
+      dataPedido:document.getElementById('ped-data-pedido').value,
+      dataEntrega:document.getElementById('ped-data-entrega').value,
+      prioridade:document.getElementById('ped-prioridade').value,
+      produtoId:prodId,
+      produtoNome:prodNome,
+      qtdPedida:qtd,
+      pagamentoStatus:document.getElementById('ped-pagamento-status').value||'pendente',
+      valorPago:Number(document.getElementById('ped-valor-pago').value)||0,
+      formaPagamento:document.getElementById('ped-forma-pagamento').value||'',
+      status:'aguardando',
+      fotoUrl:'',
+      fotoPath:'',
+      criadoEm:Date.now(),
+      criadoPor:auth.currentUser.email
+    });
+    this.reset();
+    document.getElementById('ped-data-pedido').value=new Date().toISOString().split('T')[0];
+    document.getElementById('wrap-qtd-pedido').style.display='none';
+    document.getElementById('consumo-preview').classList.remove('visible');
+    toast('Pedido registrado ✓');
+  }catch(e){toast('Erro: '+e.message,'err')}
+});
+
+// ── CALCULADORA ──────────────────────────────────────
+function calcBase(){
+  const vn=id=>Number(document.getElementById(id).value)||0;
+  const material=calcCustoMaterial();
+  const energiaKwh=(vn('calc-potencia')*vn('calc-tempo'))/1000;
+  const energia=energiaKwh*vn('calc-energia');
+  const depreciacao=(vn('calc-maquina')/(vn('calc-vida')||1))*vn('calc-tempo');
+  const base=material+energia+depreciacao+vn('calc-embalagem')+vn('calc-mao')+vn('calc-outros')+vn('calc-manut');
+  const perdaValor=base*(vn('calc-perda')/100);
+  const subtotal=base+perdaValor;
+  return {material,energia,depreciacao,embalagem:vn('calc-embalagem'),mao:vn('calc-mao'),outros:vn('calc-outros'),manut:vn('calc-manut'),perdaValor,subtotal};
+}
+
+window.calcularPreco = function(){
+  const vn=id=>Number(document.getElementById(id).value)||0;
+  const c=calcBase();
+  if(c.subtotal<=0&&calcGetReceita().length===0){
+    toast('⚠️ Adicione filamentos na receita para calcular','warn');
+    return;
+  }
+  const margemBase=c.subtotal*(1+(vn('calc-margem')/100));
+  const taxaPerc=vn('calc-taxa-perc')/100;
+  const taxaFixa=vn('calc-taxa-fixa');
+  const total=(margemBase/(taxaPerc>0?(1-taxaPerc):1))+taxaFixa;
+  document.getElementById('calc-preco').value=total.toFixed(2);
+  document.getElementById('calc-r-material').textContent=fmt(c.material);
+  document.getElementById('calc-r-energia').textContent=fmt(c.energia);
+  document.getElementById('calc-r-depreciacao').textContent=fmt(c.depreciacao);
+  document.getElementById('calc-r-perda').textContent=fmt(c.perdaValor);
+  document.getElementById('calc-r-subtotal').textContent=fmt(c.subtotal);
+  const taxaTotal=(total*taxaPerc)+taxaFixa;
+  if(taxaTotal>0){document.getElementById('calc-taxas-row').style.display='block';document.getElementById('calc-r-taxas').textContent=fmt(taxaTotal);}
+  else document.getElementById('calc-taxas-row').style.display='none';
+  document.getElementById('calc-r-custo-total').textContent=fmt(c.subtotal+taxaTotal);
+  document.getElementById('calc-r-lucro').textContent=fmt(total-c.subtotal-taxaTotal);
+  document.getElementById('calc-results-card').style.display='block';
+  calcAtualizarResumo();
+  calcAtualizarGrafico(c);
+  calcGerarTabelaMargem(c);
+};
+
+window.calcAuto = function(){
+  if(calcGetReceita().length>0) calcularPreco();
+};
+
+window.calcAtualizarResumo = function(){
+  const preco=Number(document.getElementById('calc-preco').value)||0;
+  const c=calcBase();
+  const taxaPerc=Number(document.getElementById('calc-taxa-perc').value)||0;
+  const taxaFixa=Number(document.getElementById('calc-taxa-fixa').value)||0;
+  const taxaTotal=(preco*taxaPerc/100)+taxaFixa;
+  const custoTotal=c.subtotal+taxaTotal;
+  const lucro=preco-custoTotal;
+  const pct=preco>0?((lucro/preco)*100):0;
+  const badge=document.getElementById('calc-profit-badge');
+  if(preco<=0){badge.textContent='—';badge.className='calc-profit-badge cpb-neutral';}
+  else if(pct>=25){badge.textContent=`✅ Margem ${pct.toFixed(1)}% — Ótimo`;badge.className='calc-profit-badge cpb-good';}
+  else if(pct>=10){badge.textContent=`⚠️ Margem ${pct.toFixed(1)}% — Cuidado`;badge.className='calc-profit-badge cpb-warn';}
+  else{badge.textContent=`🔴 Margem ${pct.toFixed(1)}% — Baixo`;badge.className='calc-profit-badge cpb-bad';}
+};
+
+window.calcSetMargem = function(v){document.getElementById('calc-margem').value=v;calcularPreco();};
+window.calcCopiarPreco = function(){
+  const val=document.getElementById('calc-preco').value;
+  navigator.clipboard.writeText(val).then(()=>toast(`✅ Preço copiado: ${fmt(Number(val))}`)).catch(()=>toast('Erro ao copiar','err'));
+};
+
+function calcAtualizarGrafico(c){
+  const ctx=document.getElementById('calc-chart').getContext('2d');
+  const labels=['Material','Energia','Depreciação','Embalagem','Mão de obra','Outros','Manutenção'];
+  const data=[c.material,c.energia,c.depreciacao,c.embalagem,c.mao,c.outros,c.manut];
+  const filtered=labels.map((l,i)=>({l,d:data[i]})).filter(x=>x.d>0);
+  if(filtered.length===0){document.getElementById('calc-chart-card').style.display='none';return;}
+  document.getElementById('calc-chart-card').style.display='block';
+  if(_calcChart){_calcChart.destroy();}
+  _calcChart=new Chart(ctx,{type:'doughnut',data:{labels:filtered.map(x=>x.l),datasets:[{data:filtered.map(x=>x.d),backgroundColor:['#00ffa3','#3b82f6','#a855f7','#f59e0b','#ef4444','#34d399','#60a5fa'],borderWidth:2,borderColor:'#0a0a0f'}]},options:{plugins:{legend:{position:'bottom',labels:{color:'#e8e8f0',font:{size:11},padding:10,boxWidth:12}},tooltip:{callbacks:{label:ctx=>` ${ctx.label}: ${fmt(ctx.raw)}`}}}}});
+}
+
+function calcGerarTabelaMargem(c){
+  if(c.subtotal<=0){document.getElementById('calc-margem-card').style.display='none';return;}
+  document.getElementById('calc-margem-card').style.display='block';
+  const margens=[0,20,30,50,80,100,120,150,200];
+  const margemAtual=Number(document.getElementById('calc-margem').value)||100;
+  const taxaPerc=(Number(document.getElementById('calc-taxa-perc').value)||0)/100;
+  const taxaFixa=Number(document.getElementById('calc-taxa-fixa').value)||0;
+  const tbody=document.getElementById('calc-margem-body');tbody.innerHTML='';
+  margens.forEach(m=>{
+    const preco=(c.subtotal*(1+m/100)/(taxaPerc>0?(1-taxaPerc):1))+taxaFixa;
+    const lucroR=preco-c.subtotal-(preco*taxaPerc)-taxaFixa;
+    const lucroPct=preco>0?(lucroR/preco)*100:0;
+    const isAtual=Math.abs(m-margemAtual)<0.01;
+    const cls=lucroPct>=25?'calc-pct-good':lucroPct>=10?'calc-pct-warn':'calc-pct-bad';
+    tbody.innerHTML+=`<tr${isAtual?' class="hl"':''}><td>${m}%${isAtual?' ◀':''}</td><td class="price-td">${fmt(preco)}</td><td>${fmt(lucroR)}</td><td class="${cls}">${lucroPct.toFixed(1)}%</td></tr>`;
+  });
+}
+
+window.resetarCalc = function(){
+  ['calc-nome','calc-desc','calc-img-url','calc-tempo','calc-potencia','calc-embalagem','calc-mao','calc-outros','calc-manut'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  document.getElementById('calc-energia').value='0.97';
+  document.getElementById('calc-perda').value='0';
+  document.getElementById('calc-maquina').value='2000';
+  document.getElementById('calc-vida').value='5000';
+  document.getElementById('calc-margem').value='100';
+  document.getElementById('calc-taxa-perc').value='0';
+  document.getElementById('calc-taxa-fixa').value='0';
+  document.getElementById('calc-preco').value='0';
+  document.getElementById('calc-profit-badge').textContent='—';
+  document.getElementById('calc-profit-badge').className='calc-profit-badge cpb-neutral';
+  document.getElementById('calc-results-card').style.display='none';
+  document.getElementById('calc-chart-card').style.display='none';
+  document.getElementById('calc-margem-card').style.display='none';
+  document.getElementById('calc-editing-notice').style.display='none';
+  document.getElementById('calc-receita-list').innerHTML='';
+  document.getElementById('calc-receita-empty').style.display='block';
+  document.getElementById('calc-receita-total-box').style.display='none';
+  window._calcEditingProdId=null;
+  if(_calcChart){_calcChart.destroy();_calcChart=null;}
+};
+
+// ── RECALCULAR CUSTO ──────────────────────────────────
+window.recalcularCustoProduto = async function(id){
+  const prod = window._produtos.find(x=>x._id===id);
+  if(!prod) return;
+  const receita = prod.receita||[];
+  if(!receita.length){ toast('Produto sem receita de filamentos cadastrada','err'); return; }
+
+  let novoCusto = 0;
+  let algumSemPreco = false;
+  receita.forEach(r=>{
+    const fil = window._filamentos.find(f=>f._id===r.filId);
+    if(fil?.precoKg && r.gramas>0){
+      novoCusto += (r.gramas/1000)*fil.precoKg;
+    } else {
+      algumSemPreco = true;
+    }
+  });
+
+  if(novoCusto===0){ toast('Nenhum filamento tem preço/kg cadastrado','err'); return; }
+  if(algumSemPreco){ toast('⚠️ Alguns filamentos sem preço — custo parcial','warn'); }
+
+  const custoAntigo = prod.custoProducao||0;
+  const diff = Math.abs(novoCusto-custoAntigo);
+  if(diff < 0.001){ toast('Custo já está atualizado ✓'); return; }
+
+  if(!confirm(`Recalcular custo de "${prod.nome}"?\n\nAntigo: ${fmt(custoAntigo)}\nNovo: ${fmt(novoCusto)}\n\nO preço de venda NÃO será alterado.`)) return;
+
+  try{
+    await updateDoc(doc(db,'produtos',id),{
+      custoProducao: novoCusto,
+      atualizadoEm: new Date().toISOString()
+    });
+    toast(`✅ Custo atualizado: ${fmt(custoAntigo)} → ${fmt(novoCusto)}`);
+  }catch(e){ toast('Erro: '+e.message,'err'); }
+};
+
+// ── SALVAR CALCULADORA NO FIREBASE ────────────────────
+window.salvarCalculadoraNoFirebase = async function(){
+  const nome=document.getElementById('calc-nome').value.trim();
+  if(!nome){toast('Informe o nome do produto na calculadora','err');return;}
+  const receita=calcGetReceita();
+  if(receita.length===0){toast('⚠️ Adicione pelo menos 1 filamento na receita','warn');return;}
+
+  const vn=id=>Number(document.getElementById(id).value)||0;
+  const preco=vn('calc-preco');
+  const c=calcBase();
+  const taxaTotal=(preco*(vn('calc-taxa-perc')/100))+vn('calc-taxa-fixa');
+  const lucro=preco-c.subtotal-taxaTotal;
+  const margemReal=preco>0?((lucro/preco)*100):0;
+  const pesoTotal=calcPesoTotal();
+
+  const calcData={
+    tempo:vn('calc-tempo'),potencia:vn('calc-potencia'),energia:vn('calc-energia'),
+    perda:vn('calc-perda'),maquina:vn('calc-maquina'),vida:vn('calc-vida'),
+    embalagem:vn('calc-embalagem'),mao:vn('calc-mao'),outros:vn('calc-outros'),
+    manut:vn('calc-manut'),margem:vn('calc-margem'),
+    taxaPerc:vn('calc-taxa-perc'),taxaFixa:vn('calc-taxa-fixa')
+  };
+
+  const imgUrl=document.getElementById('calc-img-url').value.trim();
+
+  const payload={
+    nome,
+    desc:document.getElementById('calc-desc').value,
+    gasto:pesoTotal,
+    unidade:'g',
+    receita,
+    tempo:vn('calc-tempo')>0?`${vn('calc-tempo')}h`:'—',
+    precoVenda:preco,
+    custoProducao:c.subtotal,
+    margemLucro:Math.round(vn('calc-margem')),
+    margemReal:parseFloat(margemReal.toFixed(1)),
+    calcData,
+    img:imgUrl,
+    atualizadoEm:new Date().toISOString(),
+    adicionadoPor:auth.currentUser?.email||'—'
+  };
+
+  try{
+    if(window._calcEditingProdId){
+      await updateDoc(doc(db,'produtos',window._calcEditingProdId),payload);
+      toast('✅ Precificação atualizada no estoque!');
+    } else {
+      const docRef=await addDoc(colProdutos,{...payload,qtd:0});
+      toast('✅ Produto salvo! Use "✏️ Editar" para ajustar a quantidade em estoque.');
+      window._calcEditingProdId=docRef.id;
+      document.getElementById('calc-editing-notice').style.display='block';
+    }
+    goToTab('produtos');
+  }catch(e){toast('Erro ao salvar: '+e.message,'err');}
+};
+
+// Fechar modais clicando fora
+['modal-edit','modal-foto','modal-edit-pedido','modal-edit-produto','modal-deducao-fil'].forEach(id=>{
+  document.getElementById(id).addEventListener('click',function(e){if(e.target===this) this.classList.remove('open');});
+});
+document.getElementById('modal-input').addEventListener('keydown',e=>{if(e.key==='Enter') confirmarEdicao();});
+
+window.addEventListener('DOMContentLoaded',()=>{
+  const dp=document.getElementById('ped-data-pedido');
+  if(dp) dp.value=new Date().toISOString().split('T')[0];
+});
+</script>
+
+<script>
+function switchTab(tabId,btn){
+  document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));
+  document.querySelectorAll('.nav-tab').forEach(b=>b.classList.remove('active'));
+  document.getElementById(tabId).classList.add('active');
+  btn.classList.add('active');
+}
+window.switchTab=switchTab;
+window.addEventListener('load',()=>{
+  const dp=document.getElementById('ped-data-pedido');
+  if(dp&&!dp.value) dp.value=new Date().toISOString().split('T')[0];
+});
+</script>
 </body>
 </html>

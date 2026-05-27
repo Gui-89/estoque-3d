@@ -1,6 +1,6 @@
 /* ═══════════════════════════════════════════════════════════
    PRINT SCOUT — app.js
-   IA: Google Gemini 1.5 Flash (GRATUITO)
+   IA: Google Gemini 2.0 Flash (GRATUITO)
    Fluxo: Busca por nicho → Selecionar produto → Análise profunda
    ═══════════════════════════════════════════════════════════ */
 
@@ -11,7 +11,7 @@ let sortKey        = 'data';
 let nichoSelecionado = '';
 let plataformaSelecionada = 'Todas';
 let volumeMinimo = 0;
-let produtoParaAnalise = null; // produto em análise profunda
+let produtoParaAnalise = null;
 
 // ── INIT ──────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
@@ -63,8 +63,9 @@ async function callGemini(prompt, maxTokens = 2048) {
   const apiKey = getApiKey();
   if (!apiKey) throw new Error('Configure sua chave Gemini gratuita em Configurações!');
 
+  // ✅ CORRIGIDO: gemini-1.5-flash foi descontinuado → usando gemini-2.0-flash
   const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -82,7 +83,6 @@ async function callGemini(prompt, maxTokens = 2048) {
   if (!response.ok) {
     const err = await response.json().catch(() => ({}));
     const msg = err.error?.message || `Erro ${response.status}`;
-    // Mensagens amigáveis para erros comuns
     if (response.status === 400) throw new Error('Chave inválida. Verifique em Configurações.');
     if (response.status === 429) throw new Error('Limite de requisições atingido. Aguarde 1 minuto e tente novamente.');
     throw new Error(msg);
@@ -92,7 +92,6 @@ async function callGemini(prompt, maxTokens = 2048) {
   const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
   if (!text) throw new Error('Resposta vazia da IA. Tente novamente.');
 
-  // Gemini com responseMimeType json já retorna JSON puro, mas por segurança:
   const clean = text.replace(/```json|```/g, '').trim();
   return JSON.parse(clean);
 }
@@ -138,7 +137,6 @@ window.switchTab = function(tab) {
 
 // ── SELEÇÃO DE NICHO ──────────────────────────────────────────
 function setupEventListeners() {
-  // Nicho cards
   document.getElementById('niche-grid')?.addEventListener('click', e => {
     const card = e.target.closest('.niche-card');
     if (!card) return;
@@ -147,7 +145,6 @@ function setupEventListeners() {
     nichoSelecionado = card.dataset.niche;
   });
 
-  // Chips de plataforma
   document.getElementById('plat-chips')?.addEventListener('click', e => {
     const chip = e.target.closest('.chip');
     if (!chip) return;
@@ -156,7 +153,6 @@ function setupEventListeners() {
     plataformaSelecionada = chip.dataset.plat;
   });
 
-  // Chips de volume
   document.getElementById('vol-chips')?.addEventListener('click', e => {
     const chip = e.target.closest('.chip');
     if (!chip) return;
@@ -165,7 +161,6 @@ function setupEventListeners() {
     volumeMinimo = parseInt(chip.dataset.vol) || 0;
   });
 
-  // Modal clique fora
   document.getElementById('analise-modal')?.addEventListener('click', function(e) {
     if (e.target === this) fecharModal('analise-modal');
   });
@@ -173,7 +168,6 @@ function setupEventListeners() {
     if (e.target === this) fecharModal('produto-modal');
   });
 
-  // Menu mobile
   document.getElementById('menu-btn')?.addEventListener('click', () => {
     document.getElementById('sidebar').classList.toggle('open');
   });
@@ -182,17 +176,16 @@ function setupEventListeners() {
   });
 }
 
-// ── BUSCAR NICHO (função principal de descoberta) ─────────────
+// ── BUSCAR NICHO ──────────────────────────────────────────────
 window.buscarNicho = async function() {
   if (!nichoSelecionado) {
     showToast('Selecione um nicho antes de buscar!', 'error');
-    // Destaca a grade de nichos
     document.getElementById('niche-grid').style.animation = 'shake .4s ease';
     setTimeout(() => { document.getElementById('niche-grid').style.animation = ''; }, 500);
     return;
   }
 
-  const foco   = document.getElementById('s-foco')?.value.trim() || '';
+  const foco       = document.getElementById('s-foco')?.value.trim() || '';
   const custoFil   = localStorage.getItem('ps_custo_fil')    || '80';
   const custoEnerg = localStorage.getItem('ps_custo_energia') || '1.50';
   const custoMao   = localStorage.getItem('ps_custo_mao')    || '25';
@@ -258,7 +251,6 @@ Regras:
       throw new Error('Formato inesperado da resposta. Tente novamente.');
     }
 
-    // Filtra por volume mínimo se necessário
     let produtos = resultado.produtos;
     if (volumeMinimo > 0) {
       produtos = produtos.filter(p => p.vendas_dia_estimadas >= volumeMinimo);
@@ -338,11 +330,9 @@ function renderDiscovery(meta, produtos) {
     </div>`;
   }).join('');
 
-  // Guarda a lista para uso posterior
   window._discoveryProdutos = produtos;
   window._discoveryMeta     = meta;
 
-  // Scroll suave até os resultados
   section.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
@@ -354,7 +344,6 @@ window.abrirAnalise = async function(index) {
 
   produtoParaAnalise = { ...produto, nicho: meta.nicho, plataforma: meta.plataforma };
 
-  // Abre modal e mostra loading
   document.getElementById('analise-loading').classList.remove('hidden');
   document.getElementById('analise-resultado').classList.add('hidden');
   document.getElementById('analise-modal').classList.remove('hidden');
@@ -439,9 +428,9 @@ function renderAnalise(r) {
   const container = document.getElementById('analise-resultado');
   container.classList.remove('hidden');
 
-  const verdClass = r.veredicto;
+  const verdClass  = r.veredicto;
   const scoreGeral = ((r.printabilidade + r.oportunidade + (10 - r.saturacao)) / 3).toFixed(1);
-  const circ = 213.6; // 2 * PI * 34
+  const circ = 213.6;
 
   container.innerHTML = `
     <div class="analise-result-header">
@@ -452,7 +441,6 @@ function renderAnalise(r) {
       <span class="verdict-badge ${verdClass}">${r.veredicto}</span>
     </div>
 
-    <!-- Scores circulares -->
     <div class="scores-row">
       ${renderCircle('circle-p', r.printabilidade, 'Printabilidade', 'var(--accent)')}
       ${renderCircle('circle-o', r.oportunidade,   'Oportunidade',   'var(--blue)')}
@@ -460,7 +448,6 @@ function renderAnalise(r) {
       ${renderCircle('circle-g', parseFloat(scoreGeral), 'Score Geral', 'var(--purple)')}
     </div>
 
-    <!-- Info cards -->
     <div class="info-grid">
       <div class="info-card"><div class="info-icon">🧵</div><div class="info-label">Material</div><div class="info-value">${r.material_principal}</div><div class="info-sub">${r.material_alternativo || 'sem alternativa'}</div></div>
       <div class="info-card"><div class="info-icon">⏱</div><div class="info-label">Tempo Print</div><div class="info-value">${r.tempo_impressao}</div><div class="info-sub">por unidade</div></div>
@@ -468,14 +455,12 @@ function renderAnalise(r) {
       <div class="info-card info-highlight"><div class="info-icon">📈</div><div class="info-label">Margem Est.</div><div class="info-value">${r.margem_estimada_min||0}%–${r.margem_estimada_max||0}%</div><div class="info-sub">preço: R$ ${(r.preco_sugerido_min||0).toFixed(2)}–${(r.preco_sugerido_max||0).toFixed(2)}</div></div>
     </div>
 
-    <!-- Tags -->
     <div class="tags-row">
       <div class="tag-item"><span class="tag-label">Dificuldade:</span><span class="tag-value">${r.dificuldade}</span></div>
       <div class="tag-item"><span class="tag-label">Concorrência:</span><span class="tag-value">${r.nivel_concorrencia}</span></div>
       <div class="tag-item"><span class="tag-label">Vendas/dia:</span><span class="tag-value">~${p.vendas_dia_estimadas}</span></div>
     </div>
 
-    <!-- Config impressão -->
     <div class="print-config-box">
       <div class="print-config-title">⚙️ Configuração de Impressão Sugerida</div>
       <div class="print-config-grid">
@@ -483,7 +468,6 @@ function renderAnalise(r) {
       </div>
     </div>
 
-    <!-- Pros e Cons -->
     <div class="pros-cons-row">
       <div class="pros-box">
         <div class="pros-title">✅ Pontos Favoráveis</div>
@@ -495,49 +479,40 @@ function renderAnalise(r) {
       </div>
     </div>
 
-    <!-- Análise resumo -->
     <div class="analise-box">
       <div class="analise-title">🤖 Análise da IA</div>
       <p>${r.analise_resumo}</p>
     </div>
 
-    <!-- Ideias de variação -->
     ${r.ideias_variacao?.length ? `
     <div class="analise-box">
       <div class="analise-title">💡 Ideias de Variação do Produto</div>
       <ul style="margin-top:8px;padding-left:16px;color:var(--text2);font-size:13px;line-height:1.8">${r.ideias_variacao.map(d => `<li>${d}</li>`).join('')}</ul>
     </div>` : ''}
 
-    <!-- Como se diferenciar -->
     <div class="analise-box">
       <div class="analise-title">🚀 Como Se Diferenciar</div>
       <ul style="margin-top:8px;padding-left:16px;color:var(--text2);font-size:13px;line-height:1.8">${(r.diferenciais||[]).map(d => `<li>${d}</li>`).join('')}</ul>
     </div>
 
-    <!-- Alertas (se houver) -->
     ${r.alertas?.length ? `
     <div class="analise-box" style="border-left:3px solid var(--yellow);margin-top:12px">
       <div class="analise-title" style="color:var(--yellow)">⚠️ Alertas</div>
       <ul style="margin-top:8px;padding-left:16px;color:var(--text2);font-size:13px;line-height:1.8">${r.alertas.map(a => `<li>${a}</li>`).join('')}</ul>
     </div>` : ''}
 
-    <!-- Keywords -->
     <div class="keywords-box">
       <div class="keywords-title">🔍 Palavras-chave para Shopee / TikTok</div>
       <div class="keywords-list">${(r.keywords_shopee||[]).map(k => `<span class="kw-tag">${k}</span>`).join('')}</div>
     </div>
 
-    <!-- Ações -->
     <div class="result-actions" style="padding:20px 0 0">
       <button class="btn-save" onclick="salvarAnalise()">💾 Salvar no Firebase</button>
       <button class="btn-ghost" onclick="fecharModal('analise-modal')">Fechar</button>
     </div>
   `;
 
-  // Anima os círculos SVG
   setTimeout(() => animarCirculos(r), 100);
-
-  // Guarda resultado para salvar
   window._currentAnalise = r;
 }
 
@@ -598,7 +573,6 @@ window.salvarAnalise = async function() {
       precoMax:          p.preco_max || 0,
       vendasDia:         p.vendas_dia_estimadas || 0,
       concorrentes:      p.concorrentes_estimados || 0,
-      // IA
       printabilidade:    r.printabilidade,
       oportunidade:      r.oportunidade,
       saturacao:         r.saturacao,
@@ -626,7 +600,6 @@ window.salvarAnalise = async function() {
       diferenciais:      r.diferenciais || [],
       ideiasVariacao:    r.ideias_variacao || [],
       alertas:           r.alertas || [],
-      // Meta
       salvoEm: new Date().toISOString(),
       usuario: currentUser.email
     };
@@ -652,7 +625,6 @@ function iniciarEscutadores() {
       renderProdutos();
     }, err => {
       console.warn('Escuta Firestore:', err.message);
-      // Fallback sem filtro de usuário se índice não existe
       psDB.collection('produtos').orderBy('salvoEm', 'desc').onSnapshot(snap => {
         produtosSalvos = snap.docs.map(d => ({ _id: d.id, ...d.data() })).filter(p => p.usuario === currentUser.email);
         atualizarDashboard();
@@ -663,7 +635,7 @@ function iniciarEscutadores() {
 
 // ── DASHBOARD ─────────────────────────────────────────────────
 function atualizarDashboard() {
-  const total   = produtosSalvos.length;
+  const total    = produtosSalvos.length;
   const produzir = produtosSalvos.filter(p => p.veredicto === 'PRODUZIR').length;
   const avaliar  = produtosSalvos.filter(p => p.veredicto === 'AVALIAR').length;
   const evitar   = produtosSalvos.filter(p => p.veredicto === 'EVITAR').length;
@@ -692,7 +664,6 @@ function atualizarDashboard() {
     if (el) el.textContent = v;
   });
 
-  // Top 5
   const topDiv = document.getElementById('top-oportunidades');
   const top5   = [...produtosSalvos].sort((a, b) => b.scoreTotal - a.scoreTotal).slice(0, 5);
   topDiv.innerHTML = !top5.length
@@ -704,7 +675,6 @@ function atualizarDashboard() {
         <div class="top-score">${Number(p.scoreTotal||0).toFixed(1)}</div>
       </div>`).join('');
 
-  // Recentes
   const recentesDiv = document.getElementById('recentes-list');
   const recentes    = produtosSalvos.slice(0, 5);
   recentesDiv.innerHTML = !recentes.length
@@ -883,7 +853,6 @@ window.showToast = function(msg, type = 'success') {
   el._t = setTimeout(() => { el.className = 'toast'; }, 3500);
 };
 
-// Expõe funções globais usadas no HTML
 window.switchTab     = window.switchTab;
 window.buscarNicho   = window.buscarNicho;
 window.abrirAnalise  = window.abrirAnalise;

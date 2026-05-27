@@ -1,6 +1,6 @@
 /* ═══════════════════════════════════════════════════════════
    PRINT SCOUT — app.js
-   IA: Google Gemini 2.0 Flash (GRATUITO)
+   IA: Google Gemini (com fallback automático de modelos)
    Fluxo: Busca por nicho → Selecionar produto → Análise profunda
    ═══════════════════════════════════════════════════════════ */
 
@@ -12,6 +12,14 @@ let nichoSelecionado = '';
 let plataformaSelecionada = 'Todas';
 let volumeMinimo = 0;
 let produtoParaAnalise = null;
+
+// Modelos testados em ordem de preferência (fallback automático)
+const GEMINI_MODELS = [
+  'gemini-2.0-flash',
+  'gemini-2.0-flash-lite',
+  'gemini-1.5-flash-latest',
+  'gemini-1.5-flash',
+];
 
 // ── INIT ──────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
@@ -59,13 +67,16 @@ function getApiKey() {
   return localStorage.getItem('ps_gemini_key') || '';
 }
 
-async function callGemini(prompt, maxTokens = 2048) {
-  const apiKey = getApiKey();
-  if (!apiKey) throw new Error('Configure sua chave Gemini gratuita em Configurações!');
+// Aguarda N milissegundos
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
 
-  // ✅ CORRIGIDO: gemini-1.5-flash foi descontinuado → usando gemini-2.0-flash
+// Tenta um modelo específico
+async function tryGeminiModel(model, prompt, maxTokens) {
+  const apiKey = getApiKey();
   const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -82,18 +93,90 @@ async function callGemini(prompt, maxTokens = 2048) {
 
   if (!response.ok) {
     const err = await response.json().catch(() => ({}));
-    const msg = err.error?.message || `Erro ${response.status}`;
-    if (response.status === 400) throw new Error('Chave inválida. Verifique em Configurações.');
-    if (response.status === 429) throw new Error('Limite de requisições atingido. Aguarde 1 minuto e tente novamente.');
-    throw new Error(msg);
+    const status = response.status;
+    const msg = err.error?.message || `Erro ${status}`;
+    // Lança com código para o caller decidir o que fazer
+    const error = new Error(msg);
+    error.status = status;
+    error.model = model;
+    throw error;
   }
 
   const data = await response.json();
   const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
   if (!text) throw new Error('Resposta vazia da IA. Tente novamente.');
 
-  const clean = text.replace(/```json|```/g, '').trim();
+  const clean = text.replace(/```json[\s\S]*?```|```/g, '').trim();
   return JSON.parse(clean);
+}
+
+// Função principal com fallback entre modelos e retry em 429
+async function callGemini(prompt, maxTokens = 2048) {
+  const apiKey = getApiKey();
+  if (!apiKey) throw new Error('Configure sua chave Gemini gratuita em Configurações!');
+
+  let lastError = null;
+
+  for (const model of GEMINI_MODELS) {
+    try {
+      // Atualiza status para mostrar qual modelo está sendo testado
+      updateStatusLabel(`Tentando ${model}...`, 'checking');
+
+      const result = await tryGeminiModel(model, prompt, maxTokens);
+
+      // Sucesso: salva o modelo que funcionou para usar primeiro na próxima vez
+      localStorage.setItem('ps_working_model', model);
+      updateStatusLabel('Gemini configurado ✓', 'online');
+      return result;
+
+    } catch (e) {
+      lastError = e;
+
+      if (e.status === 400) {
+        // Chave inválida — não adianta tentar outros modelos
+        updateStatusLabel('Chave inválida', 'offline');
+        throw new Error('Chave API inválida. Verifique em Configurações (deve começar com "AIza").');
+      }
+
+      if (e.status === 429) {
+        // Rate limit neste modelo: aguarda 3s e tenta o próximo
+        console.warn(`[PrintScout] Rate limit em ${model}, tentando próximo modelo...`);
+        await sleep(3000);
+        continue;
+      }
+
+      if (e.status === 404 || (e.message && e.message.includes('not found'))) {
+        // Modelo não disponível nesta conta/região: tenta o próximo imediatamente
+        console.warn(`[PrintScout] Modelo ${model} não disponível, tentando próximo...`);
+        continue;
+      }
+
+      // Outro erro inesperado: tenta o próximo modelo
+      console.warn(`[PrintScout] Erro em ${model}: ${e.message}`);
+      continue;
+    }
+  }
+
+  // Todos os modelos falharam
+  updateStatusLabel('Erro na API', 'offline');
+
+  if (lastError?.status === 429) {
+    throw new Error(
+      'Limite de requisições atingido em todos os modelos disponíveis. ' +
+      'Aguarde 1-2 minutos e tente novamente. ' +
+      'Dica: a cota gratuita é de 15 requisições por minuto.'
+    );
+  }
+
+  throw new Error(lastError?.message || 'Não foi possível conectar à IA. Verifique sua chave em Configurações.');
+}
+
+function updateStatusLabel(text, state) {
+  const dot = document.getElementById('status-dot');
+  const lbl = document.getElementById('status-label');
+  if (!dot || !lbl) return;
+  dot.className = 'status-dot ' + (state || '');
+  lbl.textContent = text;
 }
 
 function verificarApiKey() {
@@ -105,7 +188,8 @@ function verificarApiKey() {
     lbl.textContent = 'Gemini não configurado';
   } else {
     dot.className = 'status-dot online';
-    lbl.textContent = 'Gemini configurado ✓';
+    const savedModel = localStorage.getItem('ps_working_model') || 'gemini-2.0-flash';
+    lbl.textContent = `Gemini configurado ✓ (${savedModel})`;
   }
 }
 
@@ -116,6 +200,8 @@ window.salvarApiKey = function() {
     return;
   }
   localStorage.setItem('ps_gemini_key', key);
+  // Limpa o modelo salvo para forçar novo teste
+  localStorage.removeItem('ps_working_model');
   document.getElementById('cfg-api-key').value = '';
   const st = document.getElementById('cfg-key-status');
   st.textContent = '✅ Chave Gemini salva! Agora vá em "Buscar Nicho".';
@@ -123,6 +209,57 @@ window.salvarApiKey = function() {
   st.classList.remove('hidden');
   verificarApiKey();
   showToast('Chave Gemini salva ✓', 'success');
+};
+
+// Botão de diagnóstico: testa a chave contra todos os modelos
+window.testarChaveGemini = async function() {
+  const key = getApiKey();
+  if (!key) { showToast('Nenhuma chave configurada', 'error'); return; }
+
+  const btn = document.getElementById('btn-testar-chave');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Testando...'; }
+
+  const st = document.getElementById('cfg-key-status');
+  st.textContent = '⏳ Testando modelos disponíveis...';
+  st.className = 'cfg-status ok';
+  st.classList.remove('hidden');
+
+  const testPrompt = '{"ok":true}';
+  const results = [];
+
+  for (const model of GEMINI_MODELS) {
+    try {
+      await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: 'Responda apenas: {"ok":true}' }] }],
+            generationConfig: { maxOutputTokens: 20 }
+          })
+        }
+      ).then(async r => {
+        if (r.ok) {
+          results.push(`✅ ${model}`);
+          localStorage.setItem('ps_working_model', model);
+        } else {
+          const e = await r.json().catch(() => ({}));
+          const code = r.status;
+          if (code === 429) results.push(`⏳ ${model} (limite, mas disponível)`);
+          else if (code === 404) results.push(`❌ ${model} (não disponível)`);
+          else results.push(`⚠️ ${model} (erro ${code})`);
+        }
+      });
+    } catch(e) {
+      results.push(`❌ ${model} (falha de rede)`);
+    }
+  }
+
+  st.textContent = results.join(' | ');
+  st.className = results[0].startsWith('✅') ? 'cfg-status ok' : 'cfg-status err';
+  verificarApiKey();
+  if (btn) { btn.disabled = false; btn.textContent = '🔍 Testar Chave'; }
 };
 
 // ── TABS ──────────────────────────────────────────────────────
@@ -260,9 +397,10 @@ Regras:
     showToast(`${produtos.length} produtos encontrados no nicho!`, 'success');
   } catch (e) {
     showToast('Erro: ' + e.message, 'error');
-    if (e.message.includes('Configure')) switchTab('config');
+    if (e.message.includes('Configurações')) switchTab('config');
   } finally {
     setBuscarLoading(false);
+    verificarApiKey();
   }
 };
 
@@ -375,39 +513,39 @@ CUSTOS DO PRODUTOR:
 
 Retorne SOMENTE JSON válido:
 {
-  "printabilidade": <0-10 revisado>,
-  "oportunidade": <0-10>,
-  "saturacao": <0-10>,
-  "veredicto": <"PRODUZIR"|"AVALIAR"|"EVITAR">,
-  "material_principal": <"PLA"|"PETG"|"ABS"|"TPU"|"PLA+"|"PETG-CF"|"Resina">,
-  "material_alternativo": <segundo material ou "">,
-  "dificuldade": <"Fácil"|"Médio"|"Difícil"|"Muito Difícil">,
-  "nivel_concorrencia": <"Baixa"|"Média"|"Alta"|"Altíssima">,
-  "tempo_impressao": <"Xh Ym" por unidade>,
-  "custo_material_min": <número R$ mínimo por unidade>,
-  "custo_material_max": <número R$ máximo por unidade>,
-  "custo_total_min": <custo total mínimo incluindo energia e mão de obra>,
-  "custo_total_max": <custo total máximo>,
-  "preco_sugerido_min": <preço mínimo para venda>,
-  "preco_sugerido_max": <preço máximo para venda>,
-  "margem_estimada_min": <margem mínima %>,
-  "margem_estimada_max": <margem máxima %>,
+  "printabilidade": 8,
+  "oportunidade": 7,
+  "saturacao": 5,
+  "veredicto": "PRODUZIR",
+  "material_principal": "PLA",
+  "material_alternativo": "PETG",
+  "dificuldade": "Fácil",
+  "nivel_concorrencia": "Média",
+  "tempo_impressao": "2h 30m",
+  "custo_material_min": 3.50,
+  "custo_material_max": 6.00,
+  "custo_total_min": 5.00,
+  "custo_total_max": 9.00,
+  "preco_sugerido_min": 25.00,
+  "preco_sugerido_max": 45.00,
+  "margem_estimada_min": 60,
+  "margem_estimada_max": 80,
   "config_impressao": {
     "camada": "0.2mm",
     "infill": "20%",
     "suporte": "Não",
-    "temperatura_bico": "210°C",
-    "temperatura_mesa": "60°C",
+    "temperatura_bico": "210C",
+    "temperatura_mesa": "60C",
     "velocidade": "60mm/s",
-    "tempo_total_horas": 3.5
+    "tempo_total_horas": 2.5
   },
-  "pontos_favoraveis": ["ponto1", "ponto2", "ponto3", "ponto4"],
-  "riscos": ["risco1", "risco2", "risco3"],
-  "analise_resumo": "análise detalhada de 3-4 frases sobre viabilidade",
-  "keywords_shopee": ["kw1", "kw2", "kw3", "kw4", "kw5", "kw6"],
-  "diferenciais": ["diferencial1", "diferencial2", "diferencial3"],
-  "ideias_variacao": ["variacao1 do produto", "variacao2", "variacao3"],
-  "alertas": ["alerta1 se houver patentes ou restrições", "alerta2"]
+  "pontos_favoraveis": ["ponto1", "ponto2", "ponto3"],
+  "riscos": ["risco1", "risco2"],
+  "analise_resumo": "Análise em 3-4 frases",
+  "keywords_shopee": ["kw1", "kw2", "kw3", "kw4", "kw5"],
+  "diferenciais": ["diferencial1", "diferencial2"],
+  "ideias_variacao": ["variacao1", "variacao2"],
+  "alertas": []
 }`;
 
   try {
@@ -430,7 +568,6 @@ function renderAnalise(r) {
 
   const verdClass  = r.veredicto;
   const scoreGeral = ((r.printabilidade + r.oportunidade + (10 - r.saturacao)) / 3).toFixed(1);
-  const circ = 213.6;
 
   container.innerHTML = `
     <div class="analise-result-header">
@@ -464,18 +601,18 @@ function renderAnalise(r) {
     <div class="print-config-box">
       <div class="print-config-title">⚙️ Configuração de Impressão Sugerida</div>
       <div class="print-config-grid">
-        ${Object.entries(r.config_impressao || {}).filter(([k]) => k !== 'tempo_total_horas').map(([k,v]) => `<span class="cfg-chip"><strong>${k.replace('_',' ')}:</strong> ${v}</span>`).join('')}
+        ${Object.entries(r.config_impressao || {}).filter(([k]) => k !== 'tempo_total_horas').map(([k,v]) => `<span class="cfg-chip"><strong>${k.replace(/_/g,' ')}:</strong> ${v}</span>`).join('')}
       </div>
     </div>
 
     <div class="pros-cons-row">
       <div class="pros-box">
         <div class="pros-title">✅ Pontos Favoráveis</div>
-        <ul>${(r.pontos_favoraveis||[]).map(p => `<li>${p}</li>`).join('')}</ul>
+        <ul>${(r.pontos_favoraveis||[]).map(pt => `<li>${pt}</li>`).join('')}</ul>
       </div>
       <div class="cons-box">
         <div class="cons-title">⚠️ Riscos</div>
-        <ul>${(r.riscos||[]).map(p => `<li>${p}</li>`).join('')}</ul>
+        <ul>${(r.riscos||[]).map(ri => `<li>${ri}</li>`).join('')}</ul>
       </div>
     </div>
 

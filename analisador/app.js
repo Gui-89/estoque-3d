@@ -13,13 +13,21 @@ let plataformaSelecionada = 'Todas';
 let volumeMinimo = 0;
 let produtoParaAnalise = null;
 
-// Modelos testados em ordem de preferência (fallback automático)
-const GEMINI_MODELS = [
+// Modelos disponíveis — apenas versões estáveis e amplamente disponíveis
+const GEMINI_MODELS_BASE = [
   'gemini-2.0-flash',
   'gemini-2.0-flash-lite',
-  'gemini-1.5-flash-latest',
   'gemini-1.5-flash',
 ];
+
+// Retorna a lista de modelos priorizando o que funcionou por último
+function getGeminiModels() {
+  const saved = localStorage.getItem('ps_working_model');
+  if (!saved) return GEMINI_MODELS_BASE;
+  // Coloca o modelo salvo em primeiro, remove duplicata do restante
+  const rest = GEMINI_MODELS_BASE.filter(m => m !== saved);
+  return [saved, ...rest];
+}
 
 // ── INIT ──────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
@@ -67,12 +75,11 @@ function getApiKey() {
   return localStorage.getItem('ps_gemini_key') || '';
 }
 
-// Aguarda N milissegundos
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-// Tenta um modelo específico
+// Tenta um modelo específico — retorna o JSON parseado ou lança erro
 async function tryGeminiModel(model, prompt, maxTokens) {
   const apiKey = getApiKey();
   const response = await fetch(
@@ -94,8 +101,7 @@ async function tryGeminiModel(model, prompt, maxTokens) {
   if (!response.ok) {
     const err = await response.json().catch(() => ({}));
     const status = response.status;
-    const msg = err.error?.message || `Erro ${status}`;
-    // Lança com código para o caller decidir o que fazer
+    const msg = err.error?.message || `Erro HTTP ${status}`;
     const error = new Error(msg);
     error.status = status;
     error.model = model;
@@ -106,8 +112,16 @@ async function tryGeminiModel(model, prompt, maxTokens) {
   const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
   if (!text) throw new Error('Resposta vazia da IA. Tente novamente.');
 
-  const clean = text.replace(/```json[\s\S]*?```|```/g, '').trim();
-  return JSON.parse(clean);
+  // Remove blocos de código markdown caso o modelo os adicione mesmo com responseMimeType json
+  const clean = text.replace(/^```json\s*/i, '').replace(/\s*```$/, '').trim();
+
+  try {
+    return JSON.parse(clean);
+  } catch (parseErr) {
+    const error = new Error('Resposta da IA não é um JSON válido. Tente novamente.');
+    error.status = 'parse_error';
+    throw error;
+  }
 }
 
 // Função principal com fallback entre modelos e retry em 429
@@ -115,18 +129,18 @@ async function callGemini(prompt, maxTokens = 2048) {
   const apiKey = getApiKey();
   if (!apiKey) throw new Error('Configure sua chave Gemini gratuita em Configurações!');
 
+  const models = getGeminiModels();
   let lastError = null;
 
-  for (const model of GEMINI_MODELS) {
+  for (const model of models) {
     try {
-      // Atualiza status para mostrar qual modelo está sendo testado
       updateStatusLabel(`Tentando ${model}...`, 'checking');
 
       const result = await tryGeminiModel(model, prompt, maxTokens);
 
-      // Sucesso: salva o modelo que funcionou para usar primeiro na próxima vez
+      // Sucesso: persiste o modelo que funcionou para priorizar nas próximas chamadas
       localStorage.setItem('ps_working_model', model);
-      updateStatusLabel('Gemini configurado ✓', 'online');
+      updateStatusLabel(`Gemini ✓ (${model})`, 'online');
       return result;
 
     } catch (e) {
@@ -139,20 +153,31 @@ async function callGemini(prompt, maxTokens = 2048) {
       }
 
       if (e.status === 429) {
-        // Rate limit neste modelo: aguarda 3s e tenta o próximo
-        console.warn(`[PrintScout] Rate limit em ${model}, tentando próximo modelo...`);
+        // Rate limit: aguarda e tenta o próximo
+        console.warn(`[PrintScout] Rate limit em ${model}, aguardando 3s e tentando próximo...`);
+        updateStatusLabel(`${model} — limite, tentando próximo...`, 'checking');
         await sleep(3000);
         continue;
       }
 
-      if (e.status === 404 || (e.message && e.message.includes('not found'))) {
-        // Modelo não disponível nesta conta/região: tenta o próximo imediatamente
-        console.warn(`[PrintScout] Modelo ${model} não disponível, tentando próximo...`);
+      if (e.status === 404 || (typeof e.message === 'string' && e.message.toLowerCase().includes('not found'))) {
+        // Modelo indisponível nesta conta/região — tenta o próximo imediatamente
+        // Se era o modelo salvo, limpa para não priorizar um modelo quebrado
+        if (localStorage.getItem('ps_working_model') === model) {
+          localStorage.removeItem('ps_working_model');
+        }
+        console.warn(`[PrintScout] Modelo ${model} não disponível (404), tentando próximo...`);
         continue;
       }
 
-      // Outro erro inesperado: tenta o próximo modelo
-      console.warn(`[PrintScout] Erro em ${model}: ${e.message}`);
+      if (e.status === 'parse_error') {
+        // JSON inválido — pode ser instabilidade; tenta o próximo
+        console.warn(`[PrintScout] JSON inválido em ${model}, tentando próximo...`);
+        continue;
+      }
+
+      // Erro inesperado (rede, 500 etc.) — tenta o próximo
+      console.warn(`[PrintScout] Erro inesperado em ${model}: ${e.message}`);
       continue;
     }
   }
@@ -162,13 +187,16 @@ async function callGemini(prompt, maxTokens = 2048) {
 
   if (lastError?.status === 429) {
     throw new Error(
-      'Limite de requisições atingido em todos os modelos disponíveis. ' +
-      'Aguarde 1-2 minutos e tente novamente. ' +
-      'Dica: a cota gratuita é de 15 requisições por minuto.'
+      'Limite de requisições atingido em todos os modelos. ' +
+      'Aguarde 1–2 minutos e tente novamente. ' +
+      '(Cota gratuita: 15 req/min, 1 M tokens/dia)'
     );
   }
 
-  throw new Error(lastError?.message || 'Não foi possível conectar à IA. Verifique sua chave em Configurações.');
+  throw new Error(
+    lastError?.message ||
+    'Não foi possível conectar à IA. Verifique sua chave em Configurações.'
+  );
 }
 
 function updateStatusLabel(text, state) {
@@ -200,7 +228,7 @@ window.salvarApiKey = function() {
     return;
   }
   localStorage.setItem('ps_gemini_key', key);
-  // Limpa o modelo salvo para forçar novo teste
+  // Limpa modelo salvo para forçar novo teste de qual modelo funciona
   localStorage.removeItem('ps_working_model');
   document.getElementById('cfg-api-key').value = '';
   const st = document.getElementById('cfg-key-status');
@@ -211,7 +239,7 @@ window.salvarApiKey = function() {
   showToast('Chave Gemini salva ✓', 'success');
 };
 
-// Botão de diagnóstico: testa a chave contra todos os modelos
+// Diagnóstico: testa a chave contra todos os modelos da lista base
 window.testarChaveGemini = async function() {
   const key = getApiKey();
   if (!key) { showToast('Nenhuma chave configurada', 'error'); return; }
@@ -224,12 +252,12 @@ window.testarChaveGemini = async function() {
   st.className = 'cfg-status ok';
   st.classList.remove('hidden');
 
-  const testPrompt = '{"ok":true}';
   const results = [];
+  let firstWorking = null;
 
-  for (const model of GEMINI_MODELS) {
+  for (const model of GEMINI_MODELS_BASE) {
     try {
-      await fetch(
+      const r = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`,
         {
           method: 'POST',
@@ -239,25 +267,33 @@ window.testarChaveGemini = async function() {
             generationConfig: { maxOutputTokens: 20 }
           })
         }
-      ).then(async r => {
-        if (r.ok) {
-          results.push(`✅ ${model}`);
-          localStorage.setItem('ps_working_model', model);
+      );
+      if (r.ok) {
+        results.push(`✅ ${model}`);
+        if (!firstWorking) firstWorking = model;
+      } else {
+        const e = await r.json().catch(() => ({}));
+        if (r.status === 429) {
+          results.push(`⏳ ${model} (limite ativo — disponível)`);
+          if (!firstWorking) firstWorking = model;
+        } else if (r.status === 404) {
+          results.push(`❌ ${model} (não disponível nesta conta)`);
         } else {
-          const e = await r.json().catch(() => ({}));
-          const code = r.status;
-          if (code === 429) results.push(`⏳ ${model} (limite, mas disponível)`);
-          else if (code === 404) results.push(`❌ ${model} (não disponível)`);
-          else results.push(`⚠️ ${model} (erro ${code})`);
+          results.push(`⚠️ ${model} (erro ${r.status})`);
         }
-      });
+      }
     } catch(e) {
       results.push(`❌ ${model} (falha de rede)`);
     }
   }
 
-  st.textContent = results.join(' | ');
-  st.className = results[0].startsWith('✅') ? 'cfg-status ok' : 'cfg-status err';
+  // Persiste o primeiro modelo que funcionou
+  if (firstWorking) {
+    localStorage.setItem('ps_working_model', firstWorking);
+  }
+
+  st.innerHTML = results.join('<br>');
+  st.className = firstWorking ? 'cfg-status ok' : 'cfg-status err';
   verificarApiKey();
   if (btn) { btn.disabled = false; btn.textContent = '🔍 Testar Chave'; }
 };

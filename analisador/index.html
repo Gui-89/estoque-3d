@@ -1,1 +1,550 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Print Scout — Radar de Produtos 3D</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎯</text></svg>" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;600&family=Syne:wght@700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
 
+  <!-- SIDEBAR -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-logo">
+      <span class="logo-icon">◈</span>
+      <span class="logo-text">Print<strong>Scout</strong></span>
+    </div>
+
+    <nav class="sidebar-nav">
+      <button class="nav-item active" data-tab="dashboard">
+        <span class="nav-icon">⬡</span>
+        <span>Dashboard</span>
+      </button>
+      <button class="nav-item" data-tab="analisar">
+        <span class="nav-icon">◎</span>
+        <span>Analisar Produto</span>
+      </button>
+      <button class="nav-item" data-tab="produtos">
+        <span class="nav-icon">◫</span>
+        <span>Meus Produtos</span>
+      </button>
+      <button class="nav-item" data-tab="config">
+        <span class="nav-icon">◈</span>
+        <span>Configurações</span>
+      </button>
+    </nav>
+
+    <div class="sidebar-footer">
+      <div class="api-status" id="api-status">
+        <span class="status-dot" id="status-dot"></span>
+        <span id="status-label">Verificando...</span>
+      </div>
+    </div>
+  </aside>
+
+  <!-- MOBILE TOP BAR -->
+  <div class="mobile-topbar">
+    <span class="logo-text">◈ Print<strong>Scout</strong></span>
+    <button class="menu-btn" id="menu-btn">☰</button>
+  </div>
+
+  <!-- MAIN CONTENT -->
+  <main class="main" id="main">
+
+    <!-- ══ TAB: DASHBOARD ══ -->
+    <div class="tab-content active" id="tab-dashboard">
+      <div class="page-header">
+        <div>
+          <h1>Radar de Oportunidades</h1>
+          <p class="page-sub">Produtos analisados com potencial para impressão 3D</p>
+        </div>
+        <button class="btn-primary" onclick="switchTab('analisar')">+ Analisar Novo</button>
+      </div>
+
+      <div class="kpi-grid">
+        <div class="kpi-card">
+          <div class="kpi-value" id="kpi-total">—</div>
+          <div class="kpi-label">Produtos Analisados</div>
+          <div class="kpi-sub" id="kpi-total-sub">aguardando dados</div>
+        </div>
+        <div class="kpi-card kpi-green">
+          <div class="kpi-value" id="kpi-produzir">—</div>
+          <div class="kpi-label">Aprovados p/ Produzir</div>
+          <div class="kpi-sub" id="kpi-produzir-sub">alta oportunidade</div>
+        </div>
+        <div class="kpi-card kpi-yellow">
+          <div class="kpi-value" id="kpi-vendas">—</div>
+          <div class="kpi-label">Vendas/dia (média)</div>
+          <div class="kpi-sub" id="kpi-vendas-sub">dos produtos salvos</div>
+        </div>
+        <div class="kpi-card kpi-blue">
+          <div class="kpi-value" id="kpi-score">—</div>
+          <div class="kpi-label">Score Médio IA</div>
+          <div class="kpi-sub" id="kpi-score-sub">oportunidade de mercado</div>
+        </div>
+      </div>
+
+      <div class="section-row">
+        <div class="section-half">
+          <div class="section-header">
+            <h2>🏆 Top Oportunidades</h2>
+            <span class="badge-pill">por score</span>
+          </div>
+          <div id="top-oportunidades">
+            <div class="empty-state">
+              <div class="empty-icon">◎</div>
+              <p>Nenhum produto analisado ainda.</p>
+              <button class="btn-ghost" onclick="switchTab('analisar')">Analisar primeiro produto →</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="section-half">
+          <div class="section-header">
+            <h2>📊 Por Veredicto</h2>
+            <span class="badge-pill">distribuição</span>
+          </div>
+          <div class="verdict-chart" id="verdict-chart">
+            <div class="verdict-bar-wrap">
+              <span class="verdict-label verd-green">PRODUZIR</span>
+              <div class="verdict-track"><div class="verdict-fill fill-green" id="bar-produzir" style="width:0%"></div></div>
+              <span class="verdict-count" id="count-produzir">0</span>
+            </div>
+            <div class="verdict-bar-wrap">
+              <span class="verdict-label verd-yellow">AVALIAR</span>
+              <div class="verdict-track"><div class="verdict-fill fill-yellow" id="bar-avaliar" style="width:0%"></div></div>
+              <span class="verdict-count" id="count-avaliar">0</span>
+            </div>
+            <div class="verdict-bar-wrap">
+              <span class="verdict-label verd-red">EVITAR</span>
+              <div class="verdict-track"><div class="verdict-fill fill-red" id="bar-evitar" style="width:0%"></div></div>
+              <span class="verdict-count" id="count-evitar">0</span>
+            </div>
+            <div class="verdict-bar-wrap">
+              <span class="verdict-label" style="color:#64748b">PENDENTE</span>
+              <div class="verdict-track"><div class="verdict-fill" id="bar-pendente" style="width:0%;background:#334155"></div></div>
+              <span class="verdict-count" id="count-pendente">0</span>
+            </div>
+          </div>
+
+          <div class="section-header" style="margin-top:28px">
+            <h2>🕐 Recentes</h2>
+          </div>
+          <div id="recentes-list">
+            <div class="empty-mini">Nenhum produto ainda</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ TAB: ANALISAR ══ -->
+    <div class="tab-content" id="tab-analisar">
+      <div class="page-header">
+        <div>
+          <h1>Analisar Produto</h1>
+          <p class="page-sub">IA avalia viabilidade de produção 3D e potencial de mercado</p>
+        </div>
+      </div>
+
+      <div class="analyze-layout">
+        <!-- FORM -->
+        <div class="analyze-form-wrap">
+          <div class="form-card">
+            <div class="form-section-title">📦 Dados do Produto</div>
+
+            <div class="field-group">
+              <label>Nome do Produto *</label>
+              <input type="text" id="f-nome" placeholder="Ex: Suporte de celular para bicicleta" maxlength="120" />
+            </div>
+
+            <div class="field-row">
+              <div class="field-group">
+                <label>Plataforma *</label>
+                <select id="f-plataforma">
+                  <option value="Shopee">Shopee</option>
+                  <option value="TikTok Shop">TikTok Shop</option>
+                  <option value="Mercado Livre">Mercado Livre</option>
+                  <option value="Amazon">Amazon</option>
+                </select>
+              </div>
+              <div class="field-group">
+                <label>Categoria</label>
+                <select id="f-categoria">
+                  <option value="Casa e Organização">Casa e Organização</option>
+                  <option value="Eletrônicos / Acessórios">Eletrônicos / Acessórios</option>
+                  <option value="Automotivo">Automotivo</option>
+                  <option value="Pets">Pets</option>
+                  <option value="Infantil / Brinquedos">Infantil / Brinquedos</option>
+                  <option value="Escritório">Escritório</option>
+                  <option value="Cozinha">Cozinha</option>
+                  <option value="Saúde / Fitness">Saúde / Fitness</option>
+                  <option value="Decoração">Decoração</option>
+                  <option value="Ferramentas">Ferramentas</option>
+                  <option value="Games / Hobbies">Games / Hobbies</option>
+                  <option value="Outro">Outro</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="field-row">
+              <div class="field-group">
+                <label>Preço de Venda (R$) *</label>
+                <input type="number" id="f-preco" placeholder="29.90" min="0" step="0.01" />
+              </div>
+              <div class="field-group">
+                <label>Vendas Estimadas / Dia *</label>
+                <input type="number" id="f-vendas" placeholder="500" min="0" />
+              </div>
+            </div>
+
+            <div class="field-row">
+              <div class="field-group">
+                <label>Nº de Concorrentes</label>
+                <input type="number" id="f-concorrentes" placeholder="50" min="0" />
+              </div>
+              <div class="field-group">
+                <label>Avaliação Média (★)</label>
+                <input type="number" id="f-avaliacao" placeholder="4.5" min="0" max="5" step="0.1" />
+              </div>
+            </div>
+
+            <div class="field-group">
+              <label>URL do Produto (opcional)</label>
+              <input type="url" id="f-url" placeholder="https://shopee.com.br/produto..." />
+            </div>
+
+            <div class="field-group">
+              <label>Descrição / Observações</label>
+              <textarea id="f-descricao" rows="3" placeholder="Descreva o produto: material aparente, dimensões, partes móveis, complexidade visual..."></textarea>
+            </div>
+
+            <div id="form-error" class="form-error hidden"></div>
+
+            <button class="btn-analyze" id="btn-analyze" onclick="analisarProduto()">
+              <span id="analyze-btn-text">◎ Analisar com IA</span>
+              <span id="analyze-loader" class="hidden">⏳ Analisando...</span>
+            </button>
+
+            <p class="form-note">* Campos obrigatórios. Quanto mais detalhes, melhor a análise.</p>
+          </div>
+        </div>
+
+        <!-- RESULT PANEL -->
+        <div class="result-wrap" id="result-wrap">
+          <!-- Estado inicial -->
+          <div class="result-placeholder" id="result-placeholder">
+            <div class="placeholder-icon">◎</div>
+            <h3>Pronto para analisar</h3>
+            <p>Preencha os dados do produto e clique em <strong>Analisar com IA</strong>. A inteligência artificial vai avaliar:</p>
+            <ul class="placeholder-list">
+              <li>✓ Viabilidade de impressão 3D</li>
+              <li>✓ Material e custo estimados</li>
+              <li>✓ Tempo de impressão</li>
+              <li>✓ Margem de lucro projetada</li>
+              <li>✓ Nível de concorrência</li>
+              <li>✓ Score de oportunidade</li>
+              <li>✓ Veredicto: Produzir / Avaliar / Evitar</li>
+            </ul>
+          </div>
+
+          <!-- Resultado real -->
+          <div class="result-card hidden" id="result-card">
+            <!-- Header do resultado -->
+            <div class="result-header">
+              <div class="result-produto-nome" id="res-nome">—</div>
+              <div class="verdict-badge" id="res-veredicto-badge">—</div>
+            </div>
+
+            <!-- Scores principais -->
+            <div class="scores-row">
+              <div class="score-circle-wrap">
+                <svg class="score-circle" viewBox="0 0 80 80">
+                  <circle class="track" cx="40" cy="40" r="34"/>
+                  <circle class="fill print-fill" cx="40" cy="40" r="34" id="circle-print" style="stroke-dashoffset:213.6"/>
+                </svg>
+                <div class="score-inner">
+                  <div class="score-num" id="res-printabilidade">—</div>
+                  <div class="score-lbl">Printabilidade</div>
+                </div>
+              </div>
+              <div class="score-circle-wrap">
+                <svg class="score-circle" viewBox="0 0 80 80">
+                  <circle class="track" cx="40" cy="40" r="34"/>
+                  <circle class="fill opp-fill" cx="40" cy="40" r="34" id="circle-opp" style="stroke-dashoffset:213.6"/>
+                </svg>
+                <div class="score-inner">
+                  <div class="score-num" id="res-oportunidade">—</div>
+                  <div class="score-lbl">Oportunidade</div>
+                </div>
+              </div>
+              <div class="score-circle-wrap">
+                <svg class="score-circle" viewBox="0 0 80 80">
+                  <circle class="track" cx="40" cy="40" r="34"/>
+                  <circle class="fill sat-fill" cx="40" cy="40" r="34" id="circle-sat" style="stroke-dashoffset:213.6"/>
+                </svg>
+                <div class="score-inner">
+                  <div class="score-num" id="res-saturacao">—</div>
+                  <div class="score-lbl">Saturação</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Info cards -->
+            <div class="info-grid">
+              <div class="info-card">
+                <div class="info-icon">🧵</div>
+                <div class="info-label">Material</div>
+                <div class="info-value" id="res-material">—</div>
+                <div class="info-sub" id="res-material-alt">—</div>
+              </div>
+              <div class="info-card">
+                <div class="info-icon">⏱</div>
+                <div class="info-label">Tempo de Print</div>
+                <div class="info-value" id="res-tempo">—</div>
+                <div class="info-sub">por unidade</div>
+              </div>
+              <div class="info-card">
+                <div class="info-icon">💰</div>
+                <div class="info-label">Custo Material</div>
+                <div class="info-value" id="res-custo">—</div>
+                <div class="info-sub">estimado / unid.</div>
+              </div>
+              <div class="info-card info-highlight">
+                <div class="info-icon">📈</div>
+                <div class="info-label">Margem de Lucro</div>
+                <div class="info-value" id="res-margem">—</div>
+                <div class="info-sub" id="res-preco-sug">preço sugerido: —</div>
+              </div>
+            </div>
+
+            <!-- Dificuldade e concorrência -->
+            <div class="tags-row">
+              <div class="tag-item">
+                <span class="tag-label">Dificuldade:</span>
+                <span class="tag-value" id="res-dificuldade">—</span>
+              </div>
+              <div class="tag-item">
+                <span class="tag-label">Concorrência:</span>
+                <span class="tag-value" id="res-concorrencia">—</span>
+              </div>
+            </div>
+
+            <!-- Config de impressão -->
+            <div class="print-config-box">
+              <div class="print-config-title">⚙️ Configuração de Impressão Sugerida</div>
+              <div class="print-config-grid" id="res-config-grid">—</div>
+            </div>
+
+            <!-- Pontos favoráveis e riscos -->
+            <div class="pros-cons-row">
+              <div class="pros-box">
+                <div class="pros-title">✅ Pontos Favoráveis</div>
+                <ul id="res-pros"></ul>
+              </div>
+              <div class="cons-box">
+                <div class="cons-title">⚠️ Riscos</div>
+                <ul id="res-cons"></ul>
+              </div>
+            </div>
+
+            <!-- Análise resumo -->
+            <div class="analise-box">
+              <div class="analise-title">🤖 Análise da IA</div>
+              <p id="res-analise">—</p>
+            </div>
+
+            <!-- Palavras-chave -->
+            <div class="keywords-box">
+              <div class="keywords-title">🔍 Palavras-chave para Shopee</div>
+              <div class="keywords-list" id="res-keywords"></div>
+            </div>
+
+            <!-- Diferenciais -->
+            <div class="analise-box" style="margin-top:12px">
+              <div class="analise-title">🚀 Como Se Diferenciar</div>
+              <ul id="res-diferenciais" style="margin-top:8px;padding-left:16px;color:#94a3b8;font-size:14px;line-height:1.7"></ul>
+            </div>
+
+            <!-- Ações -->
+            <div class="result-actions">
+              <button class="btn-save" id="btn-save" onclick="salvarProduto()">💾 Salvar no Firebase</button>
+              <button class="btn-ghost" onclick="limparFormulario()">🔄 Nova Análise</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ TAB: PRODUTOS ══ -->
+    <div class="tab-content" id="tab-produtos">
+      <div class="page-header">
+        <div>
+          <h1>Meus Produtos</h1>
+          <p class="page-sub">Histórico de análises salvas</p>
+        </div>
+        <button class="btn-primary" onclick="switchTab('analisar')">+ Analisar Novo</button>
+      </div>
+
+      <!-- FILTROS -->
+      <div class="filters-bar">
+        <div class="filter-group">
+          <label>Veredicto</label>
+          <select id="filter-veredicto" onchange="aplicarFiltros()">
+            <option value="">Todos</option>
+            <option value="PRODUZIR">✅ Produzir</option>
+            <option value="AVALIAR">⚠️ Avaliar</option>
+            <option value="EVITAR">❌ Evitar</option>
+            <option value="pendente">⏳ Pendente</option>
+          </select>
+        </div>
+        <div class="filter-group">
+          <label>Plataforma</label>
+          <select id="filter-plataforma" onchange="aplicarFiltros()">
+            <option value="">Todas</option>
+            <option value="Shopee">Shopee</option>
+            <option value="TikTok Shop">TikTok Shop</option>
+            <option value="Mercado Livre">Mercado Livre</option>
+            <option value="Amazon">Amazon</option>
+          </select>
+        </div>
+        <div class="filter-group">
+          <label>Mín. Vendas/dia</label>
+          <input type="number" id="filter-vendas" placeholder="500" onchange="aplicarFiltros()" />
+        </div>
+        <div class="filter-group">
+          <label>Score mín. oportunidade</label>
+          <input type="number" id="filter-score" placeholder="0" min="0" max="10" onchange="aplicarFiltros()" />
+        </div>
+        <div class="filter-group">
+          <label>Buscar</label>
+          <input type="text" id="filter-busca" placeholder="Nome do produto..." oninput="aplicarFiltros()" />
+        </div>
+        <button class="btn-ghost" onclick="limparFiltros()">✕ Limpar</button>
+      </div>
+
+      <div class="sort-bar">
+        <span class="sort-label">Ordenar por:</span>
+        <button class="sort-btn active" data-sort="data" onclick="sortProdutos('data')">Data ↓</button>
+        <button class="sort-btn" data-sort="score" onclick="sortProdutos('score')">Score ↓</button>
+        <button class="sort-btn" data-sort="vendas" onclick="sortProdutos('vendas')">Vendas ↓</button>
+        <button class="sort-btn" data-sort="margem" onclick="sortProdutos('margem')">Margem ↓</button>
+        <span class="filter-count" id="filter-count"></span>
+      </div>
+
+      <div class="produtos-grid" id="produtos-grid">
+        <div class="loading-state">
+          <div class="loading-spinner"></div>
+          <p>Carregando produtos...</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ TAB: CONFIGURAÇÕES ══ -->
+    <div class="tab-content" id="tab-config">
+      <div class="page-header">
+        <div>
+          <h1>Configurações</h1>
+          <p class="page-sub">Chaves de API e preferências de análise</p>
+        </div>
+      </div>
+
+      <div class="config-layout">
+        <div class="config-card">
+          <h3>🔑 API Claude (Anthropic)</h3>
+          <p class="config-desc">Necessária para as análises com IA. Obtenha em <a href="https://console.anthropic.com" target="_blank">console.anthropic.com</a></p>
+          <div class="field-group">
+            <label>Chave de API</label>
+            <div style="display:flex;gap:8px;">
+              <input type="password" id="cfg-api-key" placeholder="sk-ant-..." style="flex:1" />
+              <button class="btn-primary" onclick="salvarApiKey()">Salvar</button>
+            </div>
+          </div>
+          <div id="cfg-key-status" class="cfg-status hidden"></div>
+        </div>
+
+        <div class="config-card">
+          <h3>⚙️ Parâmetros de Filtro Padrão</h3>
+          <p class="config-desc">Valores padrão usados ao abrir o painel de produtos</p>
+          <div class="field-row">
+            <div class="field-group">
+              <label>Vendas mínimas / dia</label>
+              <input type="number" id="cfg-min-vendas" placeholder="500" min="0" />
+            </div>
+            <div class="field-group">
+              <label>Score mínimo de oportunidade</label>
+              <input type="number" id="cfg-min-score" placeholder="6" min="0" max="10" />
+            </div>
+          </div>
+          <button class="btn-primary" onclick="salvarConfig()">Salvar Configurações</button>
+        </div>
+
+        <div class="config-card">
+          <h3>🖨️ Seus Custos de Impressão</h3>
+          <p class="config-desc">Usado para calcular margens reais</p>
+          <div class="field-row">
+            <div class="field-group">
+              <label>Custo do filamento (R$/kg)</label>
+              <input type="number" id="cfg-filamento" placeholder="80" min="0" step="0.01" />
+            </div>
+            <div class="field-group">
+              <label>Custo da energia (R$/hora)</label>
+              <input type="number" id="cfg-energia" placeholder="1.50" min="0" step="0.01" />
+            </div>
+          </div>
+          <div class="field-row">
+            <div class="field-group">
+              <label>Mão de obra (R$/hora)</label>
+              <input type="number" id="cfg-mao-obra" placeholder="25" min="0" step="0.01" />
+            </div>
+            <div class="field-group">
+              <label>Margem mínima aceitável (%)</label>
+              <input type="number" id="cfg-margem-min" placeholder="40" min="0" max="100" />
+            </div>
+          </div>
+          <button class="btn-primary" onclick="salvarCustos()">Salvar Custos</button>
+        </div>
+
+        <div class="config-card config-danger">
+          <h3>⚠️ Zona de Perigo</h3>
+          <p class="config-desc">Ações irreversíveis</p>
+          <button class="btn-danger" onclick="limparTodosDados()">🗑️ Apagar todos os produtos</button>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- MOBILE BOTTOM NAV -->
+  <nav class="bottom-nav">
+    <button class="bnav-item active" data-tab="dashboard">
+      <span>⬡</span><small>Dashboard</small>
+    </button>
+    <button class="bnav-item" data-tab="analisar">
+      <span>◎</span><small>Analisar</small>
+    </button>
+    <button class="bnav-item" data-tab="produtos">
+      <span>◫</span><small>Produtos</small>
+    </button>
+    <button class="bnav-item" data-tab="config">
+      <span>◈</span><small>Config</small>
+    </button>
+  </nav>
+
+  <!-- MODAL DE DETALHES DO PRODUTO -->
+  <div class="modal-overlay hidden" id="produto-modal">
+    <div class="modal-box" id="modal-content"></div>
+  </div>
+
+  <!-- TOAST -->
+  <div class="toast" id="toast"></div>
+
+  <!-- FIREBASE -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+  <script src="firebase-config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

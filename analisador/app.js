@@ -1,937 +1,935 @@
-/* ═══════════════════════════════════════════════════════════
-   PRINT SCOUT — app.js  v8
-   Fix: remove modelos 1.5 (404 na v1beta), corrige lógica 400,
-   cache salva só modelos válidos testados, sem toast em 404
-   ═══════════════════════════════════════════════════════════ */
+// ═══════════════════════════════════════════════════════════════
+//  PRINT SCOUT — app.js
+//  Radar de Produtos 3D com IA (Claude API)
+// ═══════════════════════════════════════════════════════════════
 
-let currentUser           = null;
-let produtosSalvos        = [];
-let sortKey               = 'data';
-let nichoSelecionado      = '';
-let plataformaSelecionada = 'Todas';
-let volumeMinimo          = 0;
-let produtoParaAnalise    = null;
+"use strict";
 
-// ── INIT ──────────────────────────────────────────────────────
-document.addEventListener('DOMContentLoaded', () => {
-  setupEventListeners();
-  psAuth.onAuthStateChanged(user => {
-    if (user) {
-      if (EMAILS_PERMITIDOS.includes(user.email)) {
-        currentUser = user;
-        showApp(user);
-        iniciarEscutadores();
-        verificarApiKey();
-      } else {
-        showToast('Acesso negado: ' + user.email, 'error');
-        psAuth.signOut();
-      }
-    } else {
-      currentUser = null;
-      showLogin();
+// ── ESTADO GLOBAL ──────────────────────────────────────────────
+let currentUser   = null;
+let allProdutos   = [];
+let filteredProds = [];
+let sortKey       = "data";
+let selectedNiche = null;
+let selectedPlat  = "Todas";
+let selectedVol   = 0;
+let config        = {};
+let custos        = {};
+let discoveryData = [];
+
+// ── AUTH ───────────────────────────────────────────────────────
+psAuth.onAuthStateChanged(user => {
+  if (user) {
+    if (!EMAILS_PERMITIDOS.includes(user.email)) {
+      showToast("❌ E-mail não autorizado", "error");
+      psAuth.signOut();
+      return;
     }
-  });
+    currentUser = user;
+    document.getElementById("login-screen").classList.add("hidden");
+    document.getElementById("app-screen").classList.remove("hidden");
+    document.getElementById("user-name-display").textContent = user.displayName || user.email;
+    const photo = document.getElementById("user-photo-display");
+    if (user.photoURL) { photo.src = user.photoURL; photo.style.display = "block"; }
+    loadConfig();
+    loadProdutos();
+    checkApiStatus();
+  } else {
+    currentUser = null;
+    document.getElementById("login-screen").classList.remove("hidden");
+    document.getElementById("app-screen").classList.add("hidden");
+  }
 });
 
-// ── AUTH ──────────────────────────────────────────────────────
-function showLogin() {
-  document.getElementById('login-screen').classList.remove('hidden');
-  document.getElementById('app-screen').classList.add('hidden');
-}
-function showApp(user) {
-  document.getElementById('login-screen').classList.add('hidden');
-  document.getElementById('app-screen').classList.remove('hidden');
-  document.getElementById('user-name-display').textContent = user.displayName || user.email;
-  const img = document.getElementById('user-photo-display');
-  if (img && user.photoURL) img.src = user.photoURL;
-}
-window.loginGoogle = function () {
+function loginGoogle() {
   const provider = new firebase.auth.GoogleAuthProvider();
-  psAuth.signInWithPopup(provider).catch(e => showToast(e.message, 'error'));
-};
-window.logoutUser = function () { psAuth.signOut(); };
-
-// ── GEMINI API ────────────────────────────────────────────────
-function getApiKey() { return localStorage.getItem('ps_gemini_key') || ''; }
-
-/* Extrai o primeiro bloco JSON válido de uma string qualquer */
-function extractJSON(raw) {
-  if (!raw) throw new Error('Resposta vazia da IA.');
-
-  // Remove fences markdown
-  let s = raw.replace(/^```(?:json)?\s*/im, '').replace(/\s*```\s*$/m, '').trim();
-
-  // Tenta parse direto
-  try { return JSON.parse(s); } catch (_) {}
-
-  // Procura pelo primeiro { ... } balanceado
-  const start = s.indexOf('{');
-  if (start === -1) throw new Error('Nenhum JSON encontrado na resposta.');
-  let depth = 0, end = -1;
-  for (let i = start; i < s.length; i++) {
-    if (s[i] === '{') depth++;
-    else if (s[i] === '}') { depth--; if (depth === 0) { end = i; break; } }
-  }
-  if (end === -1) throw new Error('JSON incompleto na resposta.');
-  try { return JSON.parse(s.slice(start, end + 1)); }
-  catch (e) { throw new Error('JSON inválido: ' + e.message); }
+  psAuth.signInWithPopup(provider).catch(err => {
+    showToast("Erro ao entrar: " + err.message, "error");
+  });
 }
 
-/*
- * Modelos confirmados na API v1beta (chaves gratuitas 2024+).
- * gemini-1.5-* retornam 404 em chaves recentes — removidos da lista.
- * Todos os erros 404 são silenciados (modelo não existe = pula para o próximo).
- */
-const PREFERRED_MODELS = [
-  'gemini-2.5-flash',
-  'gemini-2.5-flash-preview-05-20',
-  'gemini-2.5-pro',
-  'gemini-2.0-flash',
-  'gemini-2.0-flash-lite',
-];
-
-/*
- * Retorna a lista de modelos a tentar.
- * SEMPRE começa com o working_model salvo (se existir),
- * depois os preferidos, depois os do cache dinâmico.
- * Isso garante que gemini-2.5-flash (que funciona) seja tentado PRIMEIRO.
- */
-function getModelsToTry() {
-  const saved = localStorage.getItem('ps_working_model');
-
-  // Pega modelos do cache dinâmico (se existir e válido)
-  let cached = [];
-  try {
-    const raw = localStorage.getItem('ps_models_cache');
-    const at  = parseInt(localStorage.getItem('ps_models_cache_at') || '0');
-    // Cache válido por 30 minutos
-    if (raw && Date.now() - at < 30 * 60 * 1000) {
-      cached = JSON.parse(raw);
-    }
-  } catch (_) {}
-
-  // Mescla: saved primeiro, depois PREFERRED, depois cached (sem duplicatas)
-  const all = [];
-  const seen = new Set();
-  const add = (m) => { if (m && !seen.has(m)) { seen.add(m); all.push(m); } };
-
-  if (saved) add(saved);
-  PREFERRED_MODELS.forEach(add);
-  cached.forEach(add);
-
-  return all;
+function logoutUser() {
+  psAuth.signOut();
 }
 
-/* Tenta UM modelo — retorna resultado ou lança erro com .status */
-async function tryModel(model, prompt, maxTokens) {
-  const apiKey = getApiKey();
-
-  const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
-    {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: {
-          temperature:     0.4,
-          maxOutputTokens: maxTokens,
-        }
-      })
-    }
-  );
-
-  if (res.ok) {
-    const data = await res.json();
-    const raw  = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-    if (!raw) throw new Error('Resposta vazia do modelo.');
-    return extractJSON(raw);
-  }
-
-  let errMsg = `HTTP ${res.status}`;
-  try {
-    const errBody = await res.json();
-    errMsg = errBody.error?.message || errMsg;
-  } catch (_) {}
-
-  const err = new Error(errMsg);
-  err.status = res.status;
-  throw err;
+// ── TABS ───────────────────────────────────────────────────────
+function switchTab(tab) {
+  document.querySelectorAll(".tab-content").forEach(t => t.classList.remove("active"));
+  document.querySelectorAll(".nav-item, .bnav-item").forEach(b => b.classList.remove("active"));
+  document.getElementById("tab-" + tab).classList.add("active");
+  document.querySelectorAll(`[data-tab="${tab}"]`).forEach(b => b.classList.add("active"));
+  if (tab === "produtos") renderProdutos();
+  if (tab === "dashboard") renderDashboard();
+  closeSidebar();
 }
 
-/* Chamada principal: tenta cada modelo, pulando 429 e 404 */
-async function callGemini(prompt, maxTokens = 1500) {
-  const apiKey = getApiKey();
-  if (!apiKey) throw new Error('Configure sua chave Gemini gratuita em Configurações!');
+// ── SIDEBAR MOBILE ─────────────────────────────────────────────
+document.getElementById("menu-btn").addEventListener("click", () => {
+  document.getElementById("sidebar").classList.toggle("open");
+});
+function closeSidebar() {
+  document.getElementById("sidebar").classList.remove("open");
+}
 
-  updateStatusLabel('Conectando à IA…', 'checking');
-  const models = getModelsToTry();
-
-  let lastErr     = null;
-  let hadQuota    = false; // houve pelo menos um 429
-  let hadSuccess  = false; // segurança
-
-  for (const model of models) {
-    try {
-      updateStatusLabel(`Consultando ${model}…`, 'checking');
-      const result = await tryModel(model, prompt, maxTokens);
-
-      // Sucesso — salva como working model e atualiza status
-      localStorage.setItem('ps_working_model', model);
-      updateStatusLabel(`Gemini ✓ (${model})`, 'online');
-      console.log(`[PrintScout] ✓ Sucesso com ${model}`);
-      return result;
-
-    } catch (e) {
-      lastErr = e;
-      console.warn(`[PrintScout] ${model}: HTTP ${e.status || '?'} — ${e.message}`);
-
-      if (e.status === 400) {
-        // Chave inválida — para imediatamente
-        updateStatusLabel('Chave inválida', 'offline');
-        throw new Error('Chave API inválida. Verifique em Configurações (deve começar com "AIza").');
+// ── CONFIG ─────────────────────────────────────────────────────
+function loadConfig() {
+  if (!currentUser) return;
+  psDB.collection("users").doc(currentUser.uid).collection("config").doc("settings")
+    .get().then(doc => {
+      if (doc.exists) {
+        const d = doc.data();
+        config = d.filtros || {};
+        custos = d.custos || {};
+        preencherConfig();
       }
-
-      if (e.status === 429) {
-        hadQuota = true; // registra que houve cota esgotada
-        continue;        // tenta próximo modelo
-      }
-
-      if (e.status === 404) {
-        continue; // modelo não existe nesta chave — silencia completamente
-      }
-
-      // Outros erros (500, rede, etc.) — tenta próximo
-    }
-  }
-
-  // Nenhum modelo funcionou
-  updateStatusLabel('Erro na API', 'offline');
-
-  // Se houve pelo menos um 429 (e nenhum sucesso), é problema de cota
-  if (hadQuota) {
-    throw new Error('⏳ Cota esgotada. Aguarde 1-2 minutos e tente novamente.');
-  }
-
-  // Erro técnico — mostra mensagem amigável sem expor detalhes da API
-  throw new Error('Nenhum modelo disponível respondeu. Vá em Configurações → Testar Chave.');
+    });
 }
 
-function updateStatusLabel(text, state) {
-  const dot = document.getElementById('status-dot');
-  const lbl = document.getElementById('status-label');
-  if (!dot || !lbl) return;
-  dot.className   = 'status-dot ' + (state || '');
-  lbl.textContent = text;
+function preencherConfig() {
+  if (config.minVendas !== undefined) document.getElementById("cfg-min-vendas").value = config.minVendas;
+  if (config.minScore  !== undefined) document.getElementById("cfg-min-score").value  = config.minScore;
+  if (custos.filamento !== undefined) document.getElementById("cfg-filamento").value  = custos.filamento;
+  if (custos.energia   !== undefined) document.getElementById("cfg-energia").value    = custos.energia;
+  if (custos.maoObra   !== undefined) document.getElementById("cfg-mao-obra").value   = custos.maoObra;
+  if (custos.margemMin !== undefined) document.getElementById("cfg-margem-min").value = custos.margemMin;
+  // Carregar key salva
+  const savedKey = localStorage.getItem("ps_api_key");
+  if (savedKey) document.getElementById("cfg-api-key").value = savedKey;
 }
 
-function verificarApiKey() {
-  const key = getApiKey();
-  const dot = document.getElementById('status-dot');
-  const lbl = document.getElementById('status-label');
-  if (!dot || !lbl) return;
+function salvarConfig() {
+  config.minVendas = parseFloat(document.getElementById("cfg-min-vendas").value) || 0;
+  config.minScore  = parseFloat(document.getElementById("cfg-min-score").value)  || 0;
+  saveConfigToFirestore();
+  showToast("✅ Filtros salvos", "success");
+}
+
+function salvarCustos() {
+  custos.filamento = parseFloat(document.getElementById("cfg-filamento").value) || 80;
+  custos.energia   = parseFloat(document.getElementById("cfg-energia").value)   || 1.5;
+  custos.maoObra   = parseFloat(document.getElementById("cfg-mao-obra").value)  || 25;
+  custos.margemMin = parseFloat(document.getElementById("cfg-margem-min").value)|| 40;
+  saveConfigToFirestore();
+  showToast("✅ Custos salvos", "success");
+}
+
+function salvarApiKey() {
+  const key = document.getElementById("cfg-api-key").value.trim();
+  if (!key) { showToast("Cole a chave antes de salvar", "error"); return; }
+  localStorage.setItem("ps_api_key", key);
+  const el = document.getElementById("cfg-key-status");
+  el.textContent = "✅ Chave salva localmente (não enviada ao servidor)";
+  el.className = "cfg-status ok";
+  el.classList.remove("hidden");
+  showToast("✅ Chave API salva", "success");
+  checkApiStatus();
+}
+
+function saveConfigToFirestore() {
+  if (!currentUser) return;
+  psDB.collection("users").doc(currentUser.uid).collection("config").doc("settings")
+    .set({ filtros: config, custos: custos }, { merge: true });
+}
+
+// ── API STATUS ─────────────────────────────────────────────────
+function checkApiStatus() {
+  const dot   = document.getElementById("status-dot");
+  const label = document.getElementById("status-label");
+  const key   = localStorage.getItem("ps_api_key");
+  dot.className = "status-dot checking";
+  label.textContent = "Verificando...";
   if (!key) {
-    dot.className   = 'status-dot offline';
-    lbl.textContent = 'Gemini não configurado';
-  } else {
-    dot.className   = 'status-dot online';
-    const m = localStorage.getItem('ps_working_model') || 'gemini-2.5-flash';
-    lbl.textContent = `Gemini ✓ (${m})`;
-  }
-}
-
-window.salvarApiKey = function () {
-  const key = document.getElementById('cfg-api-key').value.trim();
-  if (!key || !key.startsWith('AIza')) {
-    showToast('Chave inválida. Deve começar com "AIza"', 'error');
+    dot.className = "status-dot offline";
+    label.textContent = "Sem chave API";
     return;
   }
-  localStorage.setItem('ps_gemini_key', key);
-  // Limpa cache para forçar redescoberta
-  localStorage.removeItem('ps_working_model');
-  localStorage.removeItem('ps_models_cache');
-  localStorage.removeItem('ps_models_cache_at');
-  document.getElementById('cfg-api-key').value = '';
-  const st = document.getElementById('cfg-key-status');
-  st.textContent = '✅ Chave salva! Clique em "Testar Chave" para detectar os modelos.';
-  st.className = 'cfg-status ok';
-  st.classList.remove('hidden');
-  verificarApiKey();
-  showToast('Chave Gemini salva ✓', 'success');
-};
+  dot.className = "status-dot online";
+  label.textContent = "API conectada";
+}
 
-window.testarChaveGemini = async function () {
-  const key = getApiKey();
-  if (!key) { showToast('Nenhuma chave configurada', 'error'); return; }
+function testarChaveGemini() {
+  const key = localStorage.getItem("ps_api_key");
+  if (!key) { showToast("Salve a chave primeiro", "error"); return; }
+  showToast("🔍 Testando chave...");
+  callGemini("Responda apenas: OK", key)
+    .then(r => {
+      const el = document.getElementById("cfg-key-status");
+      el.textContent = "✅ Chave válida! Resposta: " + r.substring(0, 60);
+      el.className = "cfg-status ok";
+      el.classList.remove("hidden");
+      checkApiStatus();
+    })
+    .catch(e => {
+      const el = document.getElementById("cfg-key-status");
+      el.textContent = "❌ Erro: " + e.message;
+      el.className = "cfg-status err";
+      el.classList.remove("hidden");
+    });
+}
 
-  const btn = document.getElementById('btn-testar-chave');
-  if (btn) { btn.disabled = true; btn.textContent = '⏳ Testando…'; }
+function limparCacheModelos() {
+  localStorage.removeItem("ps_model_cache");
+  showToast("🗑 Cache limpo", "success");
+}
 
-  const st = document.getElementById('cfg-key-status');
-  st.innerHTML = '⏳ Testando modelos disponíveis…';
-  st.className = 'cfg-status ok';
-  st.classList.remove('hidden');
+// ── GEMINI API ─────────────────────────────────────────────────
+async function callGemini(prompt, apiKey) {
+  const key = apiKey || localStorage.getItem("ps_api_key");
+  if (!key) throw new Error("Chave de API Gemini não configurada. Vá em Configurações.");
 
-  // Limpa cache para teste limpo
-  localStorage.removeItem('ps_models_cache');
-  localStorage.removeItem('ps_models_cache_at');
-  localStorage.removeItem('ps_working_model');
+  const models = [
+    "gemini-2.0-flash",
+    "gemini-1.5-flash",
+    "gemini-1.5-pro",
+    "gemini-pro"
+  ];
 
-  const results = [];
-  let firstOk   = null;
-  const modelsToTest = [...PREFERRED_MODELS];
-
-  for (const model of modelsToTest) {
+  let lastErr;
+  for (const model of models) {
     try {
-      const r = await fetch(
+      const res = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`,
         {
-          method:  'POST',
-          headers: { 'Content-Type': 'application/json' },
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            contents: [{ parts: [{ text: 'Responda APENAS: {"ok":true}' }] }],
-            generationConfig: { maxOutputTokens: 20, temperature: 0 }
+            contents: [{ parts: [{ text: prompt }] }],
+            generationConfig: { temperature: 0.7, maxOutputTokens: 2048 }
           })
         }
       );
-      if (r.ok) {
-        results.push(`✅ ${model} — <strong style="color:var(--green)">funcionando</strong>`);
-        if (!firstOk) firstOk = model;
-      } else {
-        const s = r.status;
-        if (s === 429) {
-          results.push(`⏳ ${model} — cota temporária (tente em 1 min)`);
-          if (!firstOk) firstOk = model; // Marcar como disponível mesmo com 429
-        } else if (s === 404) {
-          results.push(`⬜ ${model} — não disponível nesta chave`);
-        } else {
-          results.push(`⚠️ ${model} — erro ${s}`);
-        }
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error?.message || "Erro " + res.status);
       }
-    } catch {
-      results.push(`❌ ${model} — falha de rede`);
+      const data = await res.json();
+      return data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+    } catch (e) {
+      lastErr = e;
+      // Se for erro de modelo não encontrado, tenta o próximo
+      if (e.message.includes("404") || e.message.includes("not found")) continue;
+      throw e;
     }
   }
-
-  const html = results.map(r => `<div style="padding:3px 0;font-size:12px">${r}</div>`).join('');
-
-  if (firstOk) {
-    localStorage.setItem('ps_working_model', firstOk);
-    // Salva no cache APENAS os modelos que existem (ok ou 429), excluindo 404
-    const validModels = modelsToTest.filter((_, i) => {
-      const r = results[i] || '';
-      return !r.includes('não disponível') && !r.includes('falha de rede');
-    });
-    localStorage.setItem('ps_models_cache',    JSON.stringify(validModels.length ? validModels : PREFERRED_MODELS));
-    localStorage.setItem('ps_models_cache_at', String(Date.now()));
-    st.innerHTML = html + `<div style="margin-top:10px;padding:8px;background:var(--green-bg);border-radius:6px;color:var(--green);font-weight:600">→ Pronto! Modelo padrão: ${firstOk}</div>`;
-    st.className = 'cfg-status ok';
-  } else {
-    st.innerHTML = html + `<div style="margin-top:10px;padding:8px;background:var(--red-bg);border-radius:6px;color:var(--red);font-weight:600">→ Nenhum modelo respondeu. Aguarde 1-2 minutos e tente novamente.</div>`;
-    st.className = 'cfg-status err';
-  }
-
-  verificarApiKey();
-  if (btn) { btn.disabled = false; btn.textContent = '🔍 Testar Chave'; }
-};
-
-// ── TABS ──────────────────────────────────────────────────────
-window.switchTab = function (tab) {
-  document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
-  document.querySelectorAll('.nav-item, .bnav-item').forEach(el => el.classList.remove('active'));
-  document.getElementById('tab-' + tab).classList.add('active');
-  document.querySelectorAll(`[data-tab="${tab}"]`).forEach(el => el.classList.add('active'));
-  if (tab === 'config')   carregarConfigs();
-  if (tab === 'produtos') renderProdutos();
-};
-
-// ── SELEÇÃO DE NICHO ──────────────────────────────────────────
-function setupEventListeners() {
-  document.getElementById('niche-grid')?.addEventListener('click', e => {
-    const card = e.target.closest('.niche-card');
-    if (!card) return;
-    document.querySelectorAll('.niche-card').forEach(c => c.classList.remove('selected'));
-    card.classList.add('selected');
-    nichoSelecionado = card.dataset.niche;
-  });
-  document.getElementById('plat-chips')?.addEventListener('click', e => {
-    const chip = e.target.closest('.chip');
-    if (!chip) return;
-    document.querySelectorAll('#plat-chips .chip').forEach(c => c.classList.remove('active'));
-    chip.classList.add('active');
-    plataformaSelecionada = chip.dataset.plat;
-  });
-  document.getElementById('vol-chips')?.addEventListener('click', e => {
-    const chip = e.target.closest('.chip');
-    if (!chip) return;
-    document.querySelectorAll('#vol-chips .chip').forEach(c => c.classList.remove('active'));
-    chip.classList.add('active');
-    volumeMinimo = parseInt(chip.dataset.vol) || 0;
-  });
-  document.getElementById('analise-modal')?.addEventListener('click', function (e) {
-    if (e.target === this) fecharModal('analise-modal');
-  });
-  document.getElementById('produto-modal')?.addEventListener('click', function (e) {
-    if (e.target === this) fecharModal('produto-modal');
-  });
-  document.getElementById('menu-btn')?.addEventListener('click', () => {
-    document.getElementById('sidebar').classList.toggle('open');
-  });
-  document.getElementById('main')?.addEventListener('click', () => {
-    document.getElementById('sidebar').classList.remove('open');
-  });
+  throw lastErr || new Error("Nenhum modelo Gemini disponível");
 }
 
-// ── BUSCAR NICHO ──────────────────────────────────────────────
-window.buscarNicho = async function () {
-  if (!nichoSelecionado) {
-    showToast('Selecione um nicho antes de buscar!', 'error');
-    document.getElementById('niche-grid').style.animation = 'shake .4s ease';
-    setTimeout(() => { document.getElementById('niche-grid').style.animation = ''; }, 500);
+// ── BUSCAR NICHO ───────────────────────────────────────────────
+document.getElementById("niche-grid").addEventListener("click", e => {
+  const card = e.target.closest(".niche-card");
+  if (!card) return;
+  document.querySelectorAll(".niche-card").forEach(c => c.classList.remove("selected"));
+  card.classList.add("selected");
+  selectedNiche = card.dataset.niche;
+});
+
+document.getElementById("plat-chips").addEventListener("click", e => {
+  const chip = e.target.closest(".chip");
+  if (!chip) return;
+  document.querySelectorAll("#plat-chips .chip").forEach(c => c.classList.remove("active"));
+  chip.classList.add("active");
+  selectedPlat = chip.dataset.plat;
+});
+
+document.getElementById("vol-chips").addEventListener("click", e => {
+  const chip = e.target.closest(".chip");
+  if (!chip) return;
+  document.querySelectorAll("#vol-chips .chip").forEach(c => c.classList.remove("active"));
+  chip.classList.add("active");
+  selectedVol = parseInt(chip.dataset.vol) || 0;
+});
+
+async function buscarNicho() {
+  if (!selectedNiche) {
+    showToast("Selecione um nicho primeiro", "error");
+    document.getElementById("niche-grid").style.animation = "shake .4s ease";
+    setTimeout(() => document.getElementById("niche-grid").style.animation = "", 500);
     return;
   }
 
-  const foco       = document.getElementById('s-foco')?.value.trim() || '';
-  const custoFil   = localStorage.getItem('ps_custo_fil')     || '80';
-  const custoEnerg = localStorage.getItem('ps_custo_energia') || '1.50';
-  const custoMao   = localStorage.getItem('ps_custo_mao')     || '25';
+  const foco   = document.getElementById("s-foco").value.trim();
+  const btnTxt = document.getElementById("search-btn-text");
+  const loader = document.getElementById("search-loader");
+  const btn    = document.getElementById("btn-search");
 
-  setBuscarLoading(true);
+  btnTxt.classList.add("hidden");
+  loader.classList.remove("hidden");
+  btn.disabled = true;
 
-  const hoje = new Date().toLocaleDateString('pt-BR',
-    { day: '2-digit', month: 'long', year: 'numeric' });
+  const platFilter = selectedPlat !== "Todas" ? `Foco na plataforma ${selectedPlat}.` : "Considere Shopee, TikTok Shop e Mercado Livre.";
+  const volFilter  = selectedVol > 0 ? `Apenas produtos com estimativa de ${selectedVol}+ vendas/dia.` : "";
+  const focoExtra  = foco ? `Foco específico dentro do nicho: "${foco}".` : "";
 
-  const prompt = `Você é especialista em e-commerce brasileiro e impressão 3D FDM.
+  const prompt = `Você é um especialista em e-commerce brasileiro e impressão 3D FDM.
+Analise o nicho "${selectedNiche}" e retorne os 8 produtos mais vendidos/tendência no mercado brasileiro de e-commerce em 2024-2025 que TAMBÉM têm alto potencial para impressão 3D.
+${platFilter} ${volFilter} ${focoExtra}
 
-Nicho: ${nichoSelecionado}
-Plataforma: ${plataformaSelecionada}
-${volumeMinimo > 0 ? 'Volume mínimo: ' + volumeMinimo + ' vendas/dia' : ''}
-${foco ? 'Foco: ' + foco : ''}
-Custos: filamento R$${custoFil}/kg, energia R$${custoEnerg}/h, mão de obra R$${custoMao}/h
+Para cada produto, avalie a viabilidade para produção em impressão 3D FDM doméstica/semi-industrial.
 
-Liste os 8 produtos mais vendidos deste nicho que possam ser fabricados com impressora 3D FDM.
-
-Responda SOMENTE com JSON puro, sem texto antes ou depois, sem markdown, sem explicações:
-{"nicho":"${nichoSelecionado}","plataforma":"${plataformaSelecionada}","data_referencia":"${hoje}","produtos":[{"nome":"nome do produto","descricao":"descricao curta","preco_min":15.00,"preco_max":45.00,"vendas_dia_estimadas":500,"concorrentes_estimados":60,"avaliacao_media":4.5,"printabilidade":8,"oportunidade":7,"saturacao":4,"veredicto":"PRODUZIR","material_sugerido":"PLA","motivo":"motivo em uma frase","diferencial_possivel":"como se diferenciar"}]}
-
-Regras:
-- printabilidade/oportunidade/saturacao: 0 a 10
-- veredicto: PRODUZIR (oportunidade>=7 e print>=6), AVALIAR (intermediario), EVITAR (saturado)
-- Retorne exatamente 8 produtos
-- JSON valido sem caracteres especiais problematicos
-- Nao use aspas simples dentro de strings JSON`;
-
-  try {
-    const resultado = await callGemini(prompt, 2000);
-
-    if (!resultado.produtos || !Array.isArray(resultado.produtos)) {
-      throw new Error('A IA não retornou a lista de produtos. Tente novamente.');
+Retorne APENAS um JSON válido, sem markdown, sem texto extra, neste formato exato:
+{
+  "nicho": "${selectedNiche}",
+  "produtos": [
+    {
+      "rank": 1,
+      "nome": "Nome do produto",
+      "descricao": "Descrição curta de 1 linha",
+      "plataforma": "Shopee|TikTok Shop|Mercado Livre|Todas",
+      "vendas_dia_est": 850,
+      "preco_medio": 35.90,
+      "margem_est": 62,
+      "score_mercado": 8.5,
+      "score_printabilidade": 9.0,
+      "score_concorrencia": 7.0,
+      "veredicto": "PRODUZIR|AVALIAR|EVITAR",
+      "motivo_veredicto": "Frase curta explicando o veredicto",
+      "tempo_impressao_h": 2.5,
+      "filamento_g": 45,
+      "material": "PLA|PETG|ABS|TPU",
+      "keywords": ["keyword1", "keyword2", "keyword3", "keyword4"],
+      "pros": ["Pro 1", "Pro 2", "Pro 3"],
+      "contras": ["Contra 1", "Contra 2"]
     }
-
-    let produtos = resultado.produtos;
-    if (volumeMinimo > 0) {
-      produtos = produtos.filter(p => (p.vendas_dia_estimadas || 0) >= volumeMinimo);
-    }
-
-    if (!produtos.length) {
-      showToast('Nenhum produto passou o filtro de volume. Reduza o mínimo.', 'error');
-      setBuscarLoading(false);
-      return;
-    }
-
-    renderDiscovery(resultado, produtos);
-    showToast(`${produtos.length} produtos encontrados!`, 'success');
-  } catch (e) {
-    showToast('Erro: ' + e.message.split('\n')[0], 'error');
-    // Mostra erro completo no modal se for longo
-    if (e.message.includes('Cota') || e.message.includes('Configurações') || e.message.includes('Config')) {
-      if (e.message.includes('Configurações') || e.message.includes('Config')) switchTab('config');
-    }
-  } finally {
-    setBuscarLoading(false);
-    verificarApiKey();
-  }
-};
-
-function setBuscarLoading(loading) {
-  const btn  = document.getElementById('btn-search');
-  const txt  = document.getElementById('search-btn-text');
-  const load = document.getElementById('search-loader');
-  btn.disabled = loading;
-  txt.classList.toggle('hidden', loading);
-  load.classList.toggle('hidden', !loading);
+  ]
 }
 
-// ── RENDER DISCOVERY ──────────────────────────────────────────
-function renderDiscovery(meta, produtos) {
-  const section = document.getElementById('discovery-section');
-  const grid    = document.getElementById('discovery-grid');
-  const title   = document.getElementById('discovery-title');
+Seja realista com as estimativas. O score_printabilidade avalia quão fácil é imprimir em 3D com boa qualidade vendável.
+Veredicto: PRODUZIR (score geral ≥7.5), AVALIAR (5-7.4), EVITAR (<5).`;
 
-  title.textContent = `${meta.nicho} · ${meta.plataforma} · ${meta.data_referencia}`;
-  section.classList.remove('hidden');
+  try {
+    const raw  = await callGemini(prompt);
+    const json = extractJSON(raw);
+    discoveryData = json.produtos || [];
 
-  grid.innerHTML = produtos.map((p, i) => {
-    const scoreGeral = ((p.printabilidade + p.oportunidade + (10 - p.saturacao)) / 3).toFixed(1);
-    const verdClass  = p.veredicto === 'PRODUZIR' ? 'PRODUZIR' : p.veredicto === 'AVALIAR' ? 'AVALIAR' : 'EVITAR';
-    const vendasFmt  = p.vendas_dia_estimadas >= 1000
-      ? (p.vendas_dia_estimadas / 1000).toFixed(1) + 'k'
-      : p.vendas_dia_estimadas;
+    renderDiscovery(json);
+    document.getElementById("discovery-section").classList.remove("hidden");
+    document.getElementById("discovery-section").scrollIntoView({ behavior: "smooth", block: "start" });
+  } catch (e) {
+    showToast("❌ " + e.message, "error");
+    console.error(e);
+  } finally {
+    btnTxt.classList.remove("hidden");
+    loader.classList.add("hidden");
+    btn.disabled = false;
+  }
+}
+
+function extractJSON(text) {
+  // Tenta extrair JSON de dentro de blocos markdown ou texto puro
+  const match = text.match(/\{[\s\S]*\}/);
+  if (!match) throw new Error("IA não retornou JSON válido. Tente novamente.");
+  try {
+    return JSON.parse(match[0]);
+  } catch {
+    throw new Error("JSON inválido da IA. Tente novamente.");
+  }
+}
+
+function renderDiscovery(data) {
+  const grid  = document.getElementById("discovery-grid");
+  const title = document.getElementById("discovery-title");
+  title.textContent = `${data.produtos.length} produtos encontrados em "${data.nicho}"`;
+
+  grid.innerHTML = data.produtos.map((p, i) => {
+    const scoreColor = s => s >= 8 ? "var(--green)" : s >= 6 ? "var(--yellow)" : "var(--red)";
     return `
-    <div class="discovery-card ${verdClass}" onclick="abrirAnalise(${i})" data-index="${i}">
+    <div class="discovery-card ${p.veredicto}" onclick="abrirAnalise(${i})">
       <div class="dc-header">
-        <div class="dc-rank">#${i + 1}</div>
-        <span class="pc-badge ${verdClass}">${p.veredicto}</span>
+        <span class="dc-rank">#${p.rank || i+1}</span>
+        <span class="verdict-badge ${p.veredicto}">${verdictEmoji(p.veredicto)} ${p.veredicto}</span>
       </div>
       <div class="dc-nome">${p.nome}</div>
       <div class="dc-desc">${p.descricao}</div>
       <div class="dc-scores">
-        <div class="dc-score-item"><div class="dc-score-val" style="color:var(--accent)">${p.printabilidade}</div><div class="dc-score-lbl">Print</div></div>
-        <div class="dc-score-item"><div class="dc-score-val" style="color:var(--blue)">${p.oportunidade}</div><div class="dc-score-lbl">Oport.</div></div>
-        <div class="dc-score-item"><div class="dc-score-val" style="color:var(--yellow)">${p.saturacao}</div><div class="dc-score-lbl">Satur.</div></div>
-        <div class="dc-score-item"><div class="dc-score-val" style="color:var(--purple)">${scoreGeral}</div><div class="dc-score-lbl">Score</div></div>
+        <div class="dc-score-item">
+          <div class="dc-score-val" style="color:${scoreColor(p.score_mercado)}">${p.score_mercado.toFixed(1)}</div>
+          <div class="dc-score-lbl">Mercado</div>
+        </div>
+        <div class="dc-score-item">
+          <div class="dc-score-val" style="color:${scoreColor(p.score_printabilidade)}">${p.score_printabilidade.toFixed(1)}</div>
+          <div class="dc-score-lbl">Printab.</div>
+        </div>
+        <div class="dc-score-item">
+          <div class="dc-score-val" style="color:${scoreColor(p.score_concorrencia)}">${p.score_concorrencia.toFixed(1)}</div>
+          <div class="dc-score-lbl">Concorr.</div>
+        </div>
       </div>
       <div class="dc-stats">
-        <span class="dc-stat">📦 ~${vendasFmt}/dia</span>
-        <span class="dc-stat">💰 R$ ${p.preco_min}–${p.preco_max}</span>
-        <span class="dc-stat">🧵 ${p.material_sugerido}</span>
+        <span class="dc-stat">📦 ~${fmtNum(p.vendas_dia_est)}/dia</span>
+        <span class="dc-stat">💰 R$ ${fmtMoney(p.preco_medio)}</span>
+        <span class="dc-stat">📊 ${p.margem_est}% margem</span>
+        <span class="dc-stat">⏱ ${p.tempo_impressao_h}h</span>
+        <span class="dc-stat">🧵 ${p.filamento_g}g ${p.material}</span>
       </div>
-      <div class="dc-motivo">${p.motivo}</div>
-      <button class="dc-btn-analise">🔬 Análise Profunda →</button>
+      <div class="dc-motivo">${p.motivo_veredicto}</div>
+      <button class="dc-btn-analise" onclick="event.stopPropagation(); abrirAnalise(${i})">
+        🔬 Análise Profunda + Salvar
+      </button>
     </div>`;
-  }).join('');
-
-  window._discoveryProdutos = produtos;
-  window._discoveryMeta     = meta;
-  section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }).join("");
 }
 
-// ── ANÁLISE PROFUNDA ──────────────────────────────────────────
-window.abrirAnalise = async function (index) {
-  const produto = window._discoveryProdutos?.[index];
-  const meta    = window._discoveryMeta || {};
-  if (!produto) return;
+// ── ANÁLISE PROFUNDA ───────────────────────────────────────────
+async function abrirAnalise(idx) {
+  const prod = discoveryData[idx];
+  if (!prod) return;
 
-  produtoParaAnalise = { ...produto, nicho: meta.nicho, plataforma: meta.plataforma };
-  document.getElementById('analise-loading').classList.remove('hidden');
-  document.getElementById('analise-resultado').classList.add('hidden');
-  document.getElementById('analise-modal').classList.remove('hidden');
+  document.getElementById("analise-modal").classList.remove("hidden");
+  document.getElementById("analise-loading").classList.remove("hidden");
+  document.getElementById("analise-resultado").classList.add("hidden");
 
-  const custoFil   = localStorage.getItem('ps_custo_fil')     || '80';
-  const custoEnerg = localStorage.getItem('ps_custo_energia') || '1.50';
-  const custoMao   = localStorage.getItem('ps_custo_mao')     || '25';
-  const margemMin  = localStorage.getItem('ps_margem_min')    || '40';
+  const c = {
+    filamento: custos.filamento || 80,
+    energia:   custos.energia   || 1.5,
+    maoObra:   custos.maoObra   || 25,
+    margemMin: custos.margemMin || 40
+  };
 
-  const prompt = `Especialista em impressao 3D FDM e e-commerce brasileiro.
+  const custoProd = calcularCusto(prod, c);
 
-Produto: ${produto.nome}
-Nicho: ${meta.nicho || ''} | Plataforma: ${meta.plataforma || 'Shopee'}
-Preco mercado: R$${produto.preco_min}–R$${produto.preco_max}
-Vendas/dia: ${produto.vendas_dia_estimadas} | Concorrentes: ${produto.concorrentes_estimados}
-Custos: filamento R$${custoFil}/kg, energia R$${custoEnerg}/h, mao obra R$${custoMao}/h, margem minima ${margemMin}%
+  const prompt = `Você é um especialista em impressão 3D FDM para e-commerce brasileiro.
+Faça uma análise PROFUNDA e DETALHADA do produto: "${prod.nome}" no nicho "${selectedNiche}".
 
-Responda SOMENTE com JSON puro, sem texto antes ou depois:
-{"printabilidade":8,"oportunidade":7,"saturacao":5,"veredicto":"PRODUZIR","material_principal":"PLA","material_alternativo":"PETG","dificuldade":"Facil","nivel_concorrencia":"Media","tempo_impressao":"2h 30m","custo_material_min":3.50,"custo_material_max":6.00,"custo_total_min":5.00,"custo_total_max":9.00,"preco_sugerido_min":25.00,"preco_sugerido_max":45.00,"margem_estimada_min":60,"margem_estimada_max":80,"config_impressao":{"camada":"0.2mm","infill":"20%","suporte":"Nao","temperatura_bico":"210C","temperatura_mesa":"60C","velocidade":"60mm/s"},"pontos_favoraveis":["ponto1","ponto2","ponto3"],"riscos":["risco1","risco2"],"analise_resumo":"analise em 3 frases","keywords_shopee":["kw1","kw2","kw3","kw4","kw5"],"diferenciais":["diferencial1","diferencial2"],"ideias_variacao":["variacao1","variacao2"],"alertas":[]}`;
+Dados já disponíveis:
+- Estimativa de vendas/dia: ${prod.vendas_dia_est}
+- Preço médio de venda: R$ ${prod.preco_medio}
+- Material: ${prod.material}, Tempo: ${prod.tempo_impressao_h}h, Filamento: ${prod.filamento_g}g
+- Custo estimado de produção: R$ ${custoProd.total.toFixed(2)}
+- Margem estimada: ${custoProd.margem.toFixed(1)}%
+- Plataforma principal: ${prod.plataforma}
+
+Retorne APENAS um JSON válido sem markdown:
+{
+  "analise_mercado": "Parágrafo detalhado sobre demanda, tendências, sazonalidade e oportunidade de mercado",
+  "analise_producao": "Parágrafo sobre complexidade de impressão, configurações recomendadas, acabamento necessário",
+  "estrategia_venda": "Parágrafo sobre como posicionar, precificar e diferenciar o produto",
+  "riscos": "Parágrafo sobre principais riscos e como mitigá-los",
+  "keywords_seo": ["kw1","kw2","kw3","kw4","kw5","kw6","kw7","kw8"],
+  "configuracoes_impressao": {
+    "infill": "20%",
+    "layer_height": "0.2mm",
+    "suporte": "Não|Sim",
+    "temperatura": "200°C",
+    "velocidade": "60mm/s",
+    "acabamento": "Lixamento leve|Pintura|Nenhum"
+  },
+  "score_final": 8.2,
+  "recomendacao_final": "Frase de 1 linha com a recomendação final objetiva"
+}`;
 
   try {
-    const resultado = await callGemini(prompt, 1500);
-    resultado._produto = { ...produto, nicho: meta.nicho, plataforma: meta.plataforma };
-    renderAnalise(resultado);
+    const raw  = await callGemini(prompt);
+    const json = extractJSON(raw);
+    renderAnalise(prod, json, custoProd);
   } catch (e) {
-    fecharModal('analise-modal');
-    showToast('Erro na análise: ' + e.message.split('\n')[0], 'error');
+    document.getElementById("analise-loading").innerHTML =
+      `<p style="color:var(--red)">❌ ${e.message}</p><button class="btn-ghost" style="margin-top:12px" onclick="fecharModal('analise-modal')">Fechar</button>`;
   }
-};
-
-// ── RENDER ANÁLISE PROFUNDA ───────────────────────────────────
-function renderAnalise(r) {
-  const p = r._produto;
-  document.getElementById('analise-loading').classList.add('hidden');
-  const container = document.getElementById('analise-resultado');
-  container.classList.remove('hidden');
-
-  const verdClass  = r.veredicto;
-  const scoreGeral = ((r.printabilidade + r.oportunidade + (10 - r.saturacao)) / 3).toFixed(1);
-
-  container.innerHTML = `
-    <div class="analise-result-header">
-      <div>
-        <div class="analise-nome">${p.nome}</div>
-        <div style="font-size:12px;color:var(--text3)">${p.nicho} · ${p.plataforma}</div>
-      </div>
-      <span class="verdict-badge ${verdClass}">${r.veredicto}</span>
-    </div>
-    <div class="scores-row">
-      ${renderCircle('circle-p', r.printabilidade, 'Printabilidade', 'var(--accent)')}
-      ${renderCircle('circle-o', r.oportunidade,   'Oportunidade',   'var(--blue)')}
-      ${renderCircle('circle-s', r.saturacao,      'Saturação',      'var(--yellow)')}
-      ${renderCircle('circle-g', parseFloat(scoreGeral), 'Score Geral', 'var(--purple)')}
-    </div>
-    <div class="info-grid">
-      <div class="info-card"><div class="info-icon">🧵</div><div class="info-label">Material</div><div class="info-value">${r.material_principal}</div><div class="info-sub">${r.material_alternativo||'—'}</div></div>
-      <div class="info-card"><div class="info-icon">⏱</div><div class="info-label">Tempo Print</div><div class="info-value">${r.tempo_impressao}</div><div class="info-sub">por unidade</div></div>
-      <div class="info-card"><div class="info-icon">💰</div><div class="info-label">Custo Total</div><div class="info-value">R$ ${(r.custo_total_min||0).toFixed(2)}–${(r.custo_total_max||0).toFixed(2)}</div><div class="info-sub">material + energia + M.O.</div></div>
-      <div class="info-card info-highlight"><div class="info-icon">📈</div><div class="info-label">Margem Est.</div><div class="info-value">${r.margem_estimada_min||0}%–${r.margem_estimada_max||0}%</div><div class="info-sub">preço: R$ ${(r.preco_sugerido_min||0).toFixed(2)}–${(r.preco_sugerido_max||0).toFixed(2)}</div></div>
-    </div>
-    <div class="tags-row">
-      <div class="tag-item"><span class="tag-label">Dificuldade:</span><span class="tag-value">${r.dificuldade}</span></div>
-      <div class="tag-item"><span class="tag-label">Concorrência:</span><span class="tag-value">${r.nivel_concorrencia}</span></div>
-      <div class="tag-item"><span class="tag-label">Vendas/dia:</span><span class="tag-value">~${p.vendas_dia_estimadas}</span></div>
-    </div>
-    <div class="print-config-box">
-      <div class="print-config-title">⚙️ Configuração de Impressão Sugerida</div>
-      <div class="print-config-grid">
-        ${Object.entries(r.config_impressao||{}).map(([k,v])=>`<span class="cfg-chip"><strong>${k.replace(/_/g,' ')}:</strong> ${v}</span>`).join('')}
-      </div>
-    </div>
-    <div class="pros-cons-row">
-      <div class="pros-box">
-        <div class="pros-title">✅ Pontos Favoráveis</div>
-        <ul>${(r.pontos_favoraveis||[]).map(pt=>`<li>${pt}</li>`).join('')}</ul>
-      </div>
-      <div class="cons-box">
-        <div class="cons-title">⚠️ Riscos</div>
-        <ul>${(r.riscos||[]).map(ri=>`<li>${ri}</li>`).join('')}</ul>
-      </div>
-    </div>
-    <div class="analise-box">
-      <div class="analise-title">🤖 Análise da IA</div>
-      <p>${r.analise_resumo}</p>
-    </div>
-    ${r.ideias_variacao?.length ? `<div class="analise-box"><div class="analise-title">💡 Ideias de Variação</div><ul style="margin-top:8px;padding-left:16px;color:var(--text2);font-size:13px;line-height:1.8">${r.ideias_variacao.map(d=>`<li>${d}</li>`).join('')}</ul></div>` : ''}
-    <div class="analise-box">
-      <div class="analise-title">🚀 Como Se Diferenciar</div>
-      <ul style="margin-top:8px;padding-left:16px;color:var(--text2);font-size:13px;line-height:1.8">${(r.diferenciais||[]).map(d=>`<li>${d}</li>`).join('')}</ul>
-    </div>
-    ${r.alertas?.length ? `<div class="analise-box" style="border-left:3px solid var(--yellow)"><div class="analise-title" style="color:var(--yellow)">⚠️ Alertas</div><ul style="margin-top:8px;padding-left:16px;color:var(--text2);font-size:13px;line-height:1.8">${r.alertas.map(a=>`<li>${a}</li>`).join('')}</ul></div>` : ''}
-    <div class="keywords-box">
-      <div class="keywords-title">🔍 Palavras-chave para Shopee / TikTok</div>
-      <div class="keywords-list">${(r.keywords_shopee||[]).map(k=>`<span class="kw-tag">${k}</span>`).join('')}</div>
-    </div>
-    <div class="result-actions" style="padding:20px 0 0">
-      <button class="btn-save" onclick="salvarAnalise()">💾 Salvar no Firebase</button>
-      <button class="btn-ghost" onclick="fecharModal('analise-modal')">Fechar</button>
-    </div>`;
-
-  setTimeout(() => animarCirculos(r), 100);
-  window._currentAnalise = r;
 }
 
-function renderCircle(id, value, label, color) {
-  const v = Math.min(10, Math.max(0, value || 0));
-  const circ = 213.6;
-  const offset = circ - (v / 10) * circ;
+function calcularCusto(prod, c) {
+  const kgUsado    = (prod.filamento_g || 50) / 1000;
+  const custoFil   = kgUsado * (c.filamento || 80);
+  const custoEn    = (prod.tempo_impressao_h || 2) * (c.energia || 1.5);
+  const custoMO    = (prod.tempo_impressao_h || 2) * ((c.maoObra || 25) / 60) * 15; // ~15min MO por hora de impressão
+  const total      = custoFil + custoEn + custoMO + 2; // +R$2 overhead
+  const preco      = prod.preco_medio || 30;
+  const margem     = ((preco - total) / preco) * 100;
+  return { filamento: custoFil, energia: custoEn, maoObra: custoMO, total, preco, margem };
+}
+
+function renderAnalise(prod, json, custo) {
+  const loading   = document.getElementById("analise-loading");
+  const resultado = document.getElementById("analise-resultado");
+
+  const scoreGeral = json.score_final || ((prod.score_mercado + prod.score_printabilidade) / 2);
+  const cfg        = json.configuracoes_impressao || {};
+
+  resultado.innerHTML = `
+    <div class="analise-result-header">
+      <div>
+        <div class="analise-nome">${prod.nome}</div>
+        <div style="font-size:13px;color:var(--text2);margin-top:4px">${prod.descricao}</div>
+      </div>
+      <span class="verdict-badge ${prod.veredicto}">${verdictEmoji(prod.veredicto)} ${prod.veredicto}</span>
+    </div>
+
+    <!-- Scores circulares -->
+    <div class="scores-row">
+      ${scoreCircle(scoreGeral, "Score Geral", "#22d3a5")}
+      ${scoreCircle(prod.score_mercado, "Mercado", "#38bdf8")}
+      ${scoreCircle(prod.score_printabilidade, "Printab.", "#a78bfa")}
+      ${scoreCircle(prod.score_concorrencia, "Concorrência", "#f59e0b")}
+    </div>
+
+    <!-- Info grid financeiro -->
+    <div class="info-grid">
+      <div class="info-card info-highlight">
+        <div class="info-icon">💰</div>
+        <div class="info-label">Preço Venda</div>
+        <div class="info-value">R$ ${fmtMoney(custo.preco)}</div>
+      </div>
+      <div class="info-card">
+        <div class="info-icon">🏭</div>
+        <div class="info-label">Custo Prod.</div>
+        <div class="info-value">R$ ${custo.total.toFixed(2)}</div>
+        <div class="info-sub">fil+energia+MO</div>
+      </div>
+      <div class="info-card info-highlight">
+        <div class="info-icon">📊</div>
+        <div class="info-label">Margem Real</div>
+        <div class="info-value" style="color:${custo.margem >= 50 ? 'var(--green)' : custo.margem >= 30 ? 'var(--yellow)' : 'var(--red)'}">${custo.margem.toFixed(1)}%</div>
+      </div>
+      <div class="info-card">
+        <div class="info-icon">📦</div>
+        <div class="info-label">Vendas/dia</div>
+        <div class="info-value">~${fmtNum(prod.vendas_dia_est)}</div>
+        <div class="info-sub">estimativa IA</div>
+      </div>
+    </div>
+
+    <!-- Configuração de impressão -->
+    <div class="print-config-box">
+      <div class="print-config-title">⚙️ Configurações de Impressão Recomendadas</div>
+      <div class="print-config-grid">
+        ${Object.entries(cfg).map(([k,v]) => `<div class="cfg-chip"><strong>${k.replace(/_/g," ")}:</strong> ${v}</div>`).join("")}
+        <div class="cfg-chip"><strong>Material:</strong> ${prod.material}</div>
+        <div class="cfg-chip"><strong>Tempo:</strong> ${prod.tempo_impressao_h}h</div>
+        <div class="cfg-chip"><strong>Filamento:</strong> ${prod.filamento_g}g</div>
+      </div>
+    </div>
+
+    <!-- Análise de mercado -->
+    <div class="analise-box">
+      <div class="analise-title">📈 Análise de Mercado</div>
+      <p>${json.analise_mercado || "Análise não disponível."}</p>
+    </div>
+
+    <!-- Análise de produção -->
+    <div class="analise-box">
+      <div class="analise-title">🖨️ Análise de Produção</div>
+      <p>${json.analise_producao || "Análise não disponível."}</p>
+    </div>
+
+    <!-- Pros / Contras -->
+    <div class="pros-cons-row">
+      <div class="pros-box">
+        <div class="pros-title">Pontos Fortes</div>
+        <ul>${(prod.pros || []).map(p => `<li>${p}</li>`).join("")}</ul>
+      </div>
+      <div class="cons-box">
+        <div class="cons-title">Pontos de Atenção</div>
+        <ul>${(prod.contras || []).map(c => `<li>${c}</li>`).join("")}</ul>
+      </div>
+    </div>
+
+    <!-- Estratégia -->
+    <div class="analise-box">
+      <div class="analise-title">🚀 Estratégia de Venda</div>
+      <p>${json.estrategia_venda || "Análise não disponível."}</p>
+    </div>
+
+    <!-- Riscos -->
+    <div class="analise-box">
+      <div class="analise-title">⚠️ Riscos e Mitigação</div>
+      <p>${json.riscos || "Análise não disponível."}</p>
+    </div>
+
+    <!-- Keywords -->
+    <div class="keywords-box">
+      <div class="keywords-title">🔍 Keywords SEO para Anúncios</div>
+      <div class="keywords-list">
+        ${(json.keywords_seo || prod.keywords || []).map(k => `<span class="kw-tag">${k}</span>`).join("")}
+      </div>
+    </div>
+
+    <!-- Recomendação final -->
+    <div class="analise-box" style="border:1px solid var(--accent);background:rgba(34,211,165,.05)">
+      <div class="analise-title" style="color:var(--accent)">✅ Recomendação Final</div>
+      <p style="font-weight:600;color:var(--text)">${json.recomendacao_final || prod.motivo_veredicto}</p>
+    </div>
+
+    <!-- Ações -->
+    <div class="result-actions">
+      <button class="btn-primary" onclick="salvarProduto(${JSON.stringify(JSON.stringify({prod, json, custo}))})">
+        💾 Salvar no Banco
+      </button>
+      <button class="btn-ghost" onclick="fecharModal('analise-modal')">Fechar</button>
+    </div>
+  `;
+
+  loading.classList.add("hidden");
+  resultado.classList.remove("hidden");
+}
+
+function scoreCircle(val, label, color) {
+  const r    = 34;
+  const circ = 2 * Math.PI * r;
+  const pct  = Math.max(0, Math.min(10, val)) / 10;
+  const dash = circ * pct;
   return `
-  <div class="score-circle-wrap">
-    <svg class="score-circle" viewBox="0 0 80 80">
-      <circle class="track" cx="40" cy="40" r="34"/>
-      <circle class="fill" cx="40" cy="40" r="34" id="${id}"
-        style="stroke:${color};stroke-dashoffset:${offset.toFixed(1)};stroke-dasharray:${circ}"/>
-    </svg>
-    <div class="score-inner">
-      <div class="score-num">${v.toFixed(1)}</div>
-      <div class="score-lbl">${label}</div>
+  <div style="text-align:center">
+    <div class="score-circle-wrap">
+      <svg class="score-circle" viewBox="0 0 80 80">
+        <circle class="track" cx="40" cy="40" r="${r}"/>
+        <circle class="fill" cx="40" cy="40" r="${r}" stroke="${color}"
+          stroke-dasharray="${dash} ${circ}" />
+      </svg>
+      <div class="score-inner">
+        <div class="score-num">${val.toFixed(1)}</div>
+        <div class="score-lbl">${label}</div>
+      </div>
     </div>
   </div>`;
 }
 
-function animarCirculos(r) {
-  const circ = 213.6;
-  const vals = {
-    'circle-p': r.printabilidade,
-    'circle-o': r.oportunidade,
-    'circle-s': r.saturacao,
-    'circle-g': parseFloat(((r.printabilidade + r.oportunidade + (10 - r.saturacao)) / 3).toFixed(1))
+// ── SALVAR PRODUTO ─────────────────────────────────────────────
+function salvarProduto(jsonStr) {
+  if (!currentUser) return;
+  let data;
+  try { data = JSON.parse(jsonStr); } catch { showToast("Erro ao salvar", "error"); return; }
+
+  const { prod, json, custo } = data;
+  const doc = {
+    nome:           prod.nome,
+    descricao:      prod.descricao,
+    nicho:          selectedNiche || "",
+    plataforma:     prod.plataforma,
+    vendas_dia:     prod.vendas_dia_est,
+    preco_medio:    prod.preco_medio,
+    margem:         custo.margem,
+    custo_total:    custo.total,
+    score_mercado:  prod.score_mercado,
+    score_print:    prod.score_printabilidade,
+    score_conc:     prod.score_concorrencia,
+    score_geral:    json.score_final || ((prod.score_mercado + prod.score_printabilidade)/2),
+    veredicto:      prod.veredicto,
+    material:       prod.material,
+    filamento_g:    prod.filamento_g,
+    tempo_h:        prod.tempo_impressao_h,
+    keywords:       json.keywords_seo || prod.keywords || [],
+    pros:           prod.pros || [],
+    contras:        prod.contras || [],
+    analise_mercado:  json.analise_mercado || "",
+    analise_producao: json.analise_producao || "",
+    estrategia:       json.estrategia_venda || "",
+    riscos:           json.riscos || "",
+    cfg_impressao:    json.configuracoes_impressao || {},
+    recomendacao:     json.recomendacao_final || "",
+    motivo_veredicto: prod.motivo_veredicto || "",
+    salvo_em:         firebase.firestore.FieldValue.serverTimestamp(),
+    uid:              currentUser.uid
   };
-  Object.entries(vals).forEach(([id, val]) => {
-    const el = document.getElementById(id);
-    if (!el) return;
-    const v = Math.min(10, Math.max(0, val || 0));
-    el.style.transition = 'stroke-dashoffset 1s cubic-bezier(.4,0,.2,1)';
-    el.style.strokeDashoffset = (circ - (v / 10) * circ).toFixed(1);
+
+  psDB.collection("users").doc(currentUser.uid).collection("produtos").add(doc)
+    .then(() => {
+      showToast("✅ Produto salvo com sucesso!", "success");
+      fecharModal("analise-modal");
+      loadProdutos();
+    })
+    .catch(e => showToast("❌ " + e.message, "error"));
+}
+
+// ── CARREGAR PRODUTOS ──────────────────────────────────────────
+function loadProdutos() {
+  if (!currentUser) return;
+  psDB.collection("users").doc(currentUser.uid).collection("produtos")
+    .orderBy("salvo_em", "desc")
+    .get()
+    .then(snap => {
+      allProdutos = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      filteredProds = [...allProdutos];
+      renderProdutos();
+      renderDashboard();
+    })
+    .catch(e => console.error("loadProdutos:", e));
+}
+
+// ── RENDER PRODUTOS ────────────────────────────────────────────
+function renderProdutos() {
+  aplicarFiltros();
+}
+
+function aplicarFiltros() {
+  const veredicto = document.getElementById("filter-veredicto").value;
+  const plat      = document.getElementById("filter-plataforma").value;
+  const minVendas = parseFloat(document.getElementById("filter-vendas").value) || 0;
+  const minScore  = parseFloat(document.getElementById("filter-score").value)  || 0;
+  const busca     = document.getElementById("filter-busca").value.toLowerCase();
+
+  filteredProds = allProdutos.filter(p => {
+    if (veredicto && p.veredicto !== veredicto) return false;
+    if (plat && plat !== "Todas" && p.plataforma !== plat && p.plataforma !== "Todas") return false;
+    if (p.vendas_dia < minVendas) return false;
+    if ((p.score_geral || 0) < minScore) return false;
+    if (busca && !p.nome.toLowerCase().includes(busca)) return false;
+    return true;
+  });
+
+  sortProdutosArr();
+  const grid = document.getElementById("produtos-grid");
+  const count = document.getElementById("filter-count");
+  count.textContent = `${filteredProds.length} de ${allProdutos.length} produtos`;
+
+  if (!filteredProds.length) {
+    grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1"><div class="empty-icon">◎</div><p>Nenhum produto encontrado.</p><button class="btn-ghost" onclick="limparFiltros()">Limpar filtros</button></div>`;
+    return;
+  }
+  grid.innerHTML = filteredProds.map(p => cardProduto(p)).join("");
+}
+
+function sortProdutos(key) {
+  sortKey = key;
+  document.querySelectorAll(".sort-btn").forEach(b => b.classList.remove("active"));
+  document.querySelector(`.sort-btn[data-sort="${key}"]`)?.classList.add("active");
+  sortProdutosArr();
+  const grid = document.getElementById("produtos-grid");
+  grid.innerHTML = filteredProds.map(p => cardProduto(p)).join("");
+}
+
+function sortProdutosArr() {
+  filteredProds.sort((a, b) => {
+    if (sortKey === "score")  return (b.score_geral || 0) - (a.score_geral || 0);
+    if (sortKey === "vendas") return (b.vendas_dia  || 0) - (a.vendas_dia  || 0);
+    if (sortKey === "margem") return (b.margem      || 0) - (a.margem      || 0);
+    // data (default)
+    const da = a.salvo_em?.toDate?.() || new Date(0);
+    const db = b.salvo_em?.toDate?.() || new Date(0);
+    return db - da;
   });
 }
 
-// ── SALVAR ANÁLISE ────────────────────────────────────────────
-window.salvarAnalise = async function () {
-  const r = window._currentAnalise;
-  if (!r || !currentUser) return;
-  const p   = r._produto || {};
-  const btn = document.querySelector('#analise-resultado .btn-save');
-  if (btn) { btn.disabled = true; btn.textContent = '⏳ Salvando...'; }
+function limparFiltros() {
+  document.getElementById("filter-veredicto").value = "";
+  document.getElementById("filter-plataforma").value = "";
+  document.getElementById("filter-vendas").value = "";
+  document.getElementById("filter-score").value = "";
+  document.getElementById("filter-busca").value = "";
+  aplicarFiltros();
+}
 
-  try {
-    const scoreGeral = ((r.printabilidade + r.oportunidade + (10 - r.saturacao)) / 3);
-    const payload = {
-      nome: p.nome, descricao: p.descricao || '',
-      nicho: p.nicho || '', plataforma: p.plataforma || 'Shopee',
-      categoria: p.nicho || '',
-      precoMin: p.preco_min || 0, precoMax: p.preco_max || 0,
-      vendasDia: p.vendas_dia_estimadas || 0,
-      concorrentes: p.concorrentes_estimados || 0,
-      printabilidade: r.printabilidade, oportunidade: r.oportunidade, saturacao: r.saturacao,
-      scoreTotal: scoreGeral.toFixed(2), veredicto: r.veredicto,
-      materialPrincipal: r.material_principal, materialAlt: r.material_alternativo || '',
-      dificuldade: r.dificuldade, nivelConcorrencia: r.nivel_concorrencia,
-      tempoImpressao: r.tempo_impressao,
-      custoMin: r.custo_material_min || 0, custoMax: r.custo_material_max || 0,
-      custoTotalMin: r.custo_total_min || 0, custoTotalMax: r.custo_total_max || 0,
-      margemMin: r.margem_estimada_min || 0, margemMax: r.margem_estimada_max || 0,
-      margemEstimada: r.margem_estimada_max || 0,
-      precoSugeridoMin: r.preco_sugerido_min || 0, precoSugeridoMax: r.preco_sugerido_max || 0,
-      configImpressao: r.config_impressao || {},
-      pontosPositivos: r.pontos_favoraveis || [], riscos: r.riscos || [],
-      analise: r.analise_resumo || '', keywords: r.keywords_shopee || [],
-      diferenciais: r.diferenciais || [], ideiasVariacao: r.ideias_variacao || [],
-      alertas: r.alertas || [],
-      salvoEm: new Date().toISOString(), usuario: currentUser.email
-    };
-    await psDB.collection('produtos').add(payload);
-    if (btn) btn.textContent = '✅ Salvo!';
-    showToast('Produto salvo! ✓', 'success');
-    window._currentAnalise = null;
-  } catch (e) {
-    showToast('Erro ao salvar: ' + e.message, 'error');
-    if (btn) { btn.disabled = false; btn.textContent = '💾 Salvar no Firebase'; }
-  }
-};
+function cardProduto(p) {
+  const date = p.salvo_em?.toDate?.()
+    ? p.salvo_em.toDate().toLocaleDateString("pt-BR")
+    : "—";
+  return `
+  <div class="produto-card ${p.veredicto || "pendente"}" onclick="abrirDetalhe('${p.id}')">
+    <div class="pc-header">
+      <div class="pc-nome">${p.nome}</div>
+      <span class="pc-badge ${p.veredicto || "pendente"}">${verdictEmoji(p.veredicto)} ${p.veredicto || "Pendente"}</span>
+    </div>
+    <div class="pc-nicho-tag">${p.nicho || "—"}</div>
+    <div class="pc-stats">
+      <div class="pc-stat">
+        <div class="pc-stat-val">${(p.score_geral||0).toFixed(1)}</div>
+        <div class="pc-stat-lbl">Score IA</div>
+      </div>
+      <div class="pc-stat">
+        <div class="pc-stat-val">~${fmtNum(p.vendas_dia || 0)}</div>
+        <div class="pc-stat-lbl">Vendas/dia</div>
+      </div>
+      <div class="pc-stat">
+        <div class="pc-stat-val" style="color:${(p.margem||0)>=50?'var(--green)':(p.margem||0)>=30?'var(--yellow)':'var(--red)'}">${(p.margem||0).toFixed(0)}%</div>
+        <div class="pc-stat-lbl">Margem</div>
+      </div>
+    </div>
+    <div class="pc-footer">
+      <span class="pc-plat">${p.plataforma || "—"}</span>
+      <span class="pc-date">${date}</span>
+      <div class="pc-actions">
+        <button class="pc-btn" title="Excluir" onclick="event.stopPropagation();excluirProduto('${p.id}')">🗑</button>
+      </div>
+    </div>
+  </div>`;
+}
 
-// ── FIRESTORE ─────────────────────────────────────────────────
-function iniciarEscutadores() {
-  psDB.collection('produtos')
-    .where('usuario', '==', currentUser.email)
-    .orderBy('salvoEm', 'desc')
-    .onSnapshot(snap => {
-      produtosSalvos = snap.docs.map(d => ({ _id: d.id, ...d.data() }));
-      atualizarDashboard(); renderProdutos();
-    }, err => {
-      console.warn('Firestore:', err.message);
-      psDB.collection('produtos').orderBy('salvoEm', 'desc').onSnapshot(snap => {
-        produtosSalvos = snap.docs.map(d => ({ _id: d.id, ...d.data() }))
-          .filter(p => p.usuario === currentUser.email);
-        atualizarDashboard(); renderProdutos();
-      });
-    });
+// ── DETALHE PRODUTO SALVO ──────────────────────────────────────
+function abrirDetalhe(id) {
+  const p = allProdutos.find(x => x.id === id);
+  if (!p) return;
+
+  const modal = document.getElementById("produto-modal");
+  const box   = document.getElementById("modal-content");
+
+  const date = p.salvo_em?.toDate?.()
+    ? p.salvo_em.toDate().toLocaleString("pt-BR")
+    : "—";
+
+  box.innerHTML = `
+    <button class="modal-close" onclick="fecharModal('produto-modal')">✕</button>
+    <div class="modal-title">${p.nome}</div>
+    <div class="modal-sub">${p.descricao || ""}</div>
+
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">
+      <span class="verdict-badge ${p.veredicto}">${verdictEmoji(p.veredicto)} ${p.veredicto}</span>
+      <span class="pc-plat">${p.nicho}</span>
+      <span class="pc-plat">${p.plataforma}</span>
+      <span class="pc-plat">${p.material} · ${p.filamento_g}g · ${p.tempo_h}h</span>
+    </div>
+
+    <div class="modal-section">
+      <div class="modal-section-title">Números</div>
+      <div class="modal-grid">
+        <div class="modal-stat"><div class="modal-stat-val">${(p.score_geral||0).toFixed(1)}</div><div class="modal-stat-lbl">Score Geral</div></div>
+        <div class="modal-stat"><div class="modal-stat-val">~${fmtNum(p.vendas_dia)}</div><div class="modal-stat-lbl">Vendas/dia est.</div></div>
+        <div class="modal-stat"><div class="modal-stat-val">R$ ${fmtMoney(p.preco_medio)}</div><div class="modal-stat-lbl">Preço médio</div></div>
+        <div class="modal-stat"><div class="modal-stat-val">${(p.margem||0).toFixed(1)}%</div><div class="modal-stat-lbl">Margem real</div></div>
+        <div class="modal-stat"><div class="modal-stat-val">R$ ${(p.custo_total||0).toFixed(2)}</div><div class="modal-stat-lbl">Custo produção</div></div>
+        <div class="modal-stat"><div class="modal-stat-val">${(p.score_print||0).toFixed(1)}</div><div class="modal-stat-lbl">Printabilidade</div></div>
+      </div>
+    </div>
+
+    ${p.analise_mercado ? `
+    <div class="modal-section">
+      <div class="modal-section-title">Análise de Mercado</div>
+      <p style="font-size:13px;color:var(--text2);line-height:1.7">${p.analise_mercado}</p>
+    </div>` : ""}
+
+    ${p.estrategia ? `
+    <div class="modal-section">
+      <div class="modal-section-title">Estratégia de Venda</div>
+      <p style="font-size:13px;color:var(--text2);line-height:1.7">${p.estrategia}</p>
+    </div>` : ""}
+
+    ${(p.keywords||[]).length ? `
+    <div class="modal-section">
+      <div class="modal-section-title">Keywords SEO</div>
+      <div class="keywords-list">${p.keywords.map(k=>`<span class="kw-tag">${k}</span>`).join("")}</div>
+    </div>` : ""}
+
+    ${p.recomendacao ? `
+    <div class="analise-box" style="border:1px solid var(--accent);background:rgba(34,211,165,.05);margin-top:12px">
+      <div class="analise-title" style="color:var(--accent)">✅ Recomendação</div>
+      <p style="font-weight:600;color:var(--text)">${p.recomendacao}</p>
+    </div>` : ""}
+
+    <div style="display:flex;gap:10px;margin-top:20px;flex-wrap:wrap">
+      <button class="btn-danger" onclick="excluirProduto('${p.id}');fecharModal('produto-modal')">🗑️ Excluir</button>
+      <button class="btn-ghost" onclick="fecharModal('produto-modal')">Fechar</button>
+    </div>
+    <div style="font-size:11px;color:var(--text3);margin-top:12px">Salvo em: ${date}</div>
+  `;
+  modal.classList.remove("hidden");
+}
+
+function excluirProduto(id) {
+  if (!currentUser) return;
+  if (!confirm("Excluir este produto do banco?")) return;
+  psDB.collection("users").doc(currentUser.uid).collection("produtos").doc(id)
+    .delete()
+    .then(() => {
+      showToast("Produto excluído", "success");
+      allProdutos = allProdutos.filter(p => p.id !== id);
+      filteredProds = filteredProds.filter(p => p.id !== id);
+      renderProdutos();
+      renderDashboard();
+    })
+    .catch(e => showToast("❌ " + e.message, "error"));
+}
+
+function limparTodosDados() {
+  if (!currentUser) return;
+  if (!confirm("⚠️ Isso apagará TODOS os produtos do banco. Confirmar?")) return;
+  const batch = psDB.batch();
+  allProdutos.forEach(p => {
+    batch.delete(psDB.collection("users").doc(currentUser.uid).collection("produtos").doc(p.id));
+  });
+  batch.commit().then(() => {
+    showToast("🗑️ Todos os produtos apagados", "success");
+    allProdutos = [];
+    filteredProds = [];
+    renderProdutos();
+    renderDashboard();
+  }).catch(e => showToast("❌ " + e.message, "error"));
 }
 
 // ── DASHBOARD ─────────────────────────────────────────────────
-function atualizarDashboard() {
-  const total    = produtosSalvos.length;
-  const produzir = produtosSalvos.filter(p => p.veredicto === 'PRODUZIR').length;
-  const avaliar  = produtosSalvos.filter(p => p.veredicto === 'AVALIAR').length;
-  const evitar   = produtosSalvos.filter(p => p.veredicto === 'EVITAR').length;
+function renderDashboard() {
+  const total     = allProdutos.length;
+  const produzir  = allProdutos.filter(p => p.veredicto === "PRODUZIR").length;
+  const avaliar   = allProdutos.filter(p => p.veredicto === "AVALIAR").length;
+  const evitar    = allProdutos.filter(p => p.veredicto === "EVITAR").length;
+  const avgVendas = total ? (allProdutos.reduce((s,p) => s+(p.vendas_dia||0), 0)/total).toFixed(0) : "—";
+  const avgScore  = total ? (allProdutos.reduce((s,p) => s+(p.score_geral||0), 0)/total).toFixed(1) : "—";
 
-  document.getElementById('kpi-total').textContent    = total || '0';
-  document.getElementById('kpi-produzir').textContent = produzir || '0';
+  document.getElementById("kpi-total").textContent    = total;
+  document.getElementById("kpi-produzir").textContent = produzir;
+  document.getElementById("kpi-vendas").textContent   = avgVendas;
+  document.getElementById("kpi-score").textContent    = avgScore;
 
-  const avgVendas = total > 0
-    ? Math.round(produtosSalvos.reduce((s, p) => s + (p.vendasDia || 0), 0) / total)
-    : '—';
-  document.getElementById('kpi-vendas').textContent = avgVendas;
+  // Verdict bars
+  const mx = Math.max(produzir, avaliar, evitar, 1);
+  document.getElementById("bar-produzir").style.width = (produzir/mx*100) + "%";
+  document.getElementById("bar-avaliar").style.width  = (avaliar /mx*100) + "%";
+  document.getElementById("bar-evitar").style.width   = (evitar  /mx*100) + "%";
+  document.getElementById("count-produzir").textContent = produzir;
+  document.getElementById("count-avaliar").textContent  = avaliar;
+  document.getElementById("count-evitar").textContent   = evitar;
 
-  const avgScore = total > 0
-    ? (produtosSalvos.reduce((s, p) => s + Number(p.scoreTotal || 0), 0) / total).toFixed(1)
-    : '—';
-  document.getElementById('kpi-score').textContent = avgScore;
-
-  ['produzir', 'avaliar', 'evitar'].forEach(k => {
-    const count = { produzir, avaliar, evitar }[k];
-    const pct   = total > 0 ? Math.round((count / total) * 100) : 0;
-    const bar   = document.getElementById('bar-' + k);
-    const cnt   = document.getElementById('count-' + k);
-    if (bar) bar.style.width = pct + '%';
-    if (cnt) cnt.textContent = count;
-  });
-
-  const topDiv = document.getElementById('top-oportunidades');
-  const top5   = [...produtosSalvos].sort((a, b) => b.scoreTotal - a.scoreTotal).slice(0, 5);
-  topDiv.innerHTML = !top5.length
-    ? `<div class="empty-state"><div class="empty-icon">◎</div><p>Nenhum produto salvo ainda.</p><button class="btn-ghost" onclick="switchTab('buscar')">Buscar primeiro nicho →</button></div>`
-    : top5.map((p, i) => `
-      <div class="top-item" onclick="abrirModal('${p._id}')">
-        <div class="top-rank ${i===0?'r1':i===1?'r2':i===2?'r3':''}">#${i+1}</div>
-        <div class="top-info"><div class="top-nome">${p.nome}</div><div class="top-meta">${p.plataforma||''} · ${p.vendasDia||0} vendas/dia</div></div>
-        <div class="top-score">${Number(p.scoreTotal||0).toFixed(1)}</div>
-      </div>`).join('');
-
-  const recentesDiv = document.getElementById('recentes-list');
-  const recentes    = produtosSalvos.slice(0, 5);
-  recentesDiv.innerHTML = !recentes.length
-    ? '<div class="empty-mini">Nenhum produto ainda</div>'
-    : recentes.map(p => `
-      <div class="recente-item" onclick="abrirModal('${p._id}')">
-        <div><div class="recente-nome">${p.nome}</div><span class="verdict-label ${verdictClass(p.veredicto)}" style="font-size:10px">${p.veredicto||'PENDENTE'}</span></div>
-        <span class="recente-data">${formatDate(p.salvoEm)}</span>
-      </div>`).join('');
-}
-
-// ── RENDER PRODUTOS ───────────────────────────────────────────
-window.aplicarFiltros = function () { renderProdutos(); };
-window.limparFiltros  = function () {
-  ['filter-veredicto','filter-plataforma','filter-vendas','filter-score','filter-busca']
-    .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
-  renderProdutos();
-};
-window.sortProdutos = function (key) {
-  sortKey = key;
-  document.querySelectorAll('.sort-btn').forEach(b => b.classList.remove('active'));
-  document.querySelector(`[data-sort="${key}"]`)?.classList.add('active');
-  renderProdutos();
-};
-
-function renderProdutos() {
-  let dados = [...produtosSalvos];
-  const fVerd  = document.getElementById('filter-veredicto')?.value || '';
-  const fPlat  = document.getElementById('filter-plataforma')?.value || '';
-  const fVend  = Number(document.getElementById('filter-vendas')?.value) || 0;
-  const fScore = Number(document.getElementById('filter-score')?.value) || 0;
-  const fBusca = (document.getElementById('filter-busca')?.value || '').toLowerCase();
-
-  if (fVerd)  dados = dados.filter(p => p.veredicto === fVerd);
-  if (fPlat)  dados = dados.filter(p => (p.plataforma || '').includes(fPlat));
-  if (fVend)  dados = dados.filter(p => (p.vendasDia || 0) >= fVend);
-  if (fScore) dados = dados.filter(p => Number(p.scoreTotal || 0) >= fScore);
-  if (fBusca) dados = dados.filter(p => (p.nome || '').toLowerCase().includes(fBusca));
-
-  dados.sort((a, b) => {
-    if (sortKey === 'score')  return Number(b.scoreTotal||0) - Number(a.scoreTotal||0);
-    if (sortKey === 'vendas') return (b.vendasDia||0) - (a.vendasDia||0);
-    if (sortKey === 'margem') return (b.margemEstimada||0) - (a.margemEstimada||0);
-    return (b.salvoEm||'').localeCompare(a.salvoEm||'');
-  });
-
-  const countEl = document.getElementById('filter-count');
-  if (countEl) countEl.textContent = `${dados.length} produto(s)`;
-
-  const grid = document.getElementById('produtos-grid');
-  if (!dados.length) {
-    grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1;text-align:center;padding:60px"><div class="empty-icon">◫</div><p>Nenhum produto encontrado.</p></div>`;
-    return;
+  // Top oportunidades
+  const top    = [...allProdutos].sort((a,b) => (b.score_geral||0)-(a.score_geral||0)).slice(0,5);
+  const topEl  = document.getElementById("top-oportunidades");
+  if (!top.length) {
+    topEl.innerHTML = `<div class="empty-state"><div class="empty-icon">◎</div><p>Nenhum produto salvo ainda.</p><button class="btn-ghost" onclick="switchTab('buscar')">Buscar primeiro nicho →</button></div>`;
+  } else {
+    topEl.innerHTML = top.map((p, i) => `
+      <div class="top-item" onclick="abrirDetalhe('${p.id}')">
+        <div class="top-rank ${i===0?'r1':i===1?'r2':i===2?'r3':''}">${i+1}</div>
+        <div class="top-info">
+          <div class="top-nome">${p.nome}</div>
+          <div class="top-meta">${p.nicho} · ${verdictEmoji(p.veredicto)} ${p.veredicto}</div>
+        </div>
+        <div class="top-score">${(p.score_geral||0).toFixed(1)}</div>
+      </div>`).join("");
   }
-  grid.innerHTML = dados.map(p => {
-    const v     = p.veredicto || 'pendente';
-    const score = Number(p.scoreTotal||0).toFixed(1);
-    return `
-    <div class="produto-card ${v}" onclick="abrirModal('${p._id}')">
-      <div class="pc-header">
-        <div class="pc-nome">${p.nome}</div>
-        <div class="pc-badge ${v}">${p.veredicto||'PENDENTE'}</div>
-      </div>
-      <div class="pc-nicho-tag">${p.nicho||p.categoria||'—'}</div>
-      <div class="pc-stats">
-        <div class="pc-stat"><div class="pc-stat-val">${score}</div><div class="pc-stat-lbl">Score IA</div></div>
-        <div class="pc-stat"><div class="pc-stat-val">${p.vendasDia||0}</div><div class="pc-stat-lbl">Vendas/dia</div></div>
-        <div class="pc-stat"><div class="pc-stat-val">${p.margemMax||p.margemEstimada||0}%</div><div class="pc-stat-lbl">Margem</div></div>
-      </div>
-      <div class="pc-footer">
-        <span class="pc-plat">${p.plataforma||'—'}</span>
-        <span class="pc-date">${formatDate(p.salvoEm)}</span>
-        <div class="pc-actions"><button class="pc-btn" title="Excluir" onclick="event.stopPropagation();excluirProduto('${p._id}','${(p.nome||'').replace(/'/g,"\\'")}')">🗑</button></div>
-      </div>
-    </div>`;
-  }).join('');
+
+  // Recentes
+  const rec   = [...allProdutos].slice(0, 5);
+  const recEl = document.getElementById("recentes-list");
+  if (!rec.length) {
+    recEl.innerHTML = `<div class="empty-mini">Nenhum produto ainda</div>`;
+  } else {
+    recEl.innerHTML = rec.map(p => {
+      const d = p.salvo_em?.toDate?.()
+        ? p.salvo_em.toDate().toLocaleDateString("pt-BR")
+        : "—";
+      return `<div class="recente-item" onclick="abrirDetalhe('${p.id}')">
+        <span class="recente-nome">${p.nome}</span>
+        <span class="recente-data">${d}</span>
+      </div>`;
+    }).join("");
+  }
 }
 
-// ── MODAL PRODUTO ─────────────────────────────────────────────
-window.abrirModal = function (id) {
-  const p = produtosSalvos.find(x => x._id === id);
-  if (!p) return;
-  document.getElementById('modal-content').innerHTML = `
-    <button class="modal-close" onclick="fecharModal('produto-modal')">✕</button>
-    <div class="modal-title">${p.nome}</div>
-    <div class="modal-sub">${p.plataforma||''} · ${p.nicho||p.categoria||''} · ${formatDate(p.salvoEm)}</div>
-    <span class="verdict-badge ${p.veredicto}" style="display:inline-block;margin-bottom:20px">${p.veredicto||'PENDENTE'}</span>
-    <div class="modal-section"><div class="modal-section-title">Scores</div>
-      <div class="modal-grid">
-        <div class="modal-stat"><div class="modal-stat-val" style="color:var(--accent)">${p.printabilidade||0}</div><div class="modal-stat-lbl">Printabilidade</div></div>
-        <div class="modal-stat"><div class="modal-stat-val" style="color:var(--blue)">${p.oportunidade||0}</div><div class="modal-stat-lbl">Oportunidade</div></div>
-        <div class="modal-stat"><div class="modal-stat-val" style="color:var(--yellow)">${p.saturacao||0}</div><div class="modal-stat-lbl">Saturação</div></div>
-      </div></div>
-    <div class="modal-section"><div class="modal-section-title">Produção</div>
-      <div class="modal-grid">
-        <div class="modal-stat"><div class="modal-stat-val">${p.materialPrincipal||'—'}</div><div class="modal-stat-lbl">Material</div></div>
-        <div class="modal-stat"><div class="modal-stat-val">${p.tempoImpressao||'—'}</div><div class="modal-stat-lbl">Tempo</div></div>
-        <div class="modal-stat"><div class="modal-stat-val">R$ ${(p.custoTotalMin||p.custoMin||0).toFixed(2)}</div><div class="modal-stat-lbl">Custo Mín.</div></div>
-      </div></div>
-    <div class="modal-section"><div class="modal-section-title">Mercado</div>
-      <div class="modal-grid">
-        <div class="modal-stat"><div class="modal-stat-val">R$${p.precoMin||0}–${p.precoMax||0}</div><div class="modal-stat-lbl">Preço Mercado</div></div>
-        <div class="modal-stat"><div class="modal-stat-val">${p.vendasDia||0}/dia</div><div class="modal-stat-lbl">Vendas Est.</div></div>
-        <div class="modal-stat"><div class="modal-stat-val">${p.margemMax||p.margemEstimada||0}%</div><div class="modal-stat-lbl">Margem Máx.</div></div>
-      </div></div>
-    ${p.analise ? `<div class="modal-section"><div class="modal-section-title">Análise da IA</div><p style="font-size:13px;color:var(--text2);line-height:1.7">${p.analise}</p></div>` : ''}
-    ${p.keywords?.length ? `<div class="modal-section"><div class="modal-section-title">Keywords</div><div class="keywords-list">${p.keywords.map(k=>`<span class="kw-tag">${k}</span>`).join('')}</div></div>` : ''}`;
-  document.getElementById('produto-modal').classList.remove('hidden');
-};
-window.fecharModal = function (id) { document.getElementById(id)?.classList.add('hidden'); };
+// ── MODAL ──────────────────────────────────────────────────────
+function fecharModal(id) {
+  document.getElementById(id).classList.add("hidden");
+}
+// Fechar clicando no overlay
+document.querySelectorAll(".modal-overlay").forEach(overlay => {
+  overlay.addEventListener("click", e => {
+    if (e.target === overlay) overlay.classList.add("hidden");
+  });
+});
 
-// ── EXCLUIR ───────────────────────────────────────────────────
-window.excluirProduto = async function (id, nome) {
-  if (!confirm(`Excluir "${nome}"?`)) return;
-  try { await psDB.collection('produtos').doc(id).delete(); showToast('Produto excluído ✓'); }
-  catch (e) { showToast('Erro: ' + e.message, 'error'); }
-};
-window.limparTodosDados = async function () {
-  if (!confirm('⚠️ Apagar TODOS os seus produtos?')) return;
-  if (!confirm('Confirma? Ação irreversível!')) return;
-  try {
-    const snap  = await psDB.collection('produtos').where('usuario', '==', currentUser.email).get();
-    const batch = psDB.batch();
-    snap.docs.forEach(d => batch.delete(d.ref));
-    await batch.commit();
-    showToast('Todos os produtos apagados', 'error');
-  } catch (e) { showToast('Erro: ' + e.message, 'error'); }
-};
-
-// ── CONFIGS ───────────────────────────────────────────────────
-window.salvarConfig = function () {
-  const v = document.getElementById('cfg-min-vendas').value;
-  const s = document.getElementById('cfg-min-score').value;
-  if (v) localStorage.setItem('ps_min_vendas', v);
-  if (s) localStorage.setItem('ps_min_score', s);
-  showToast('Configurações salvas ✓');
-};
-window.salvarCustos = function () {
-  [['cfg-filamento','ps_custo_fil'],['cfg-energia','ps_custo_energia'],
-   ['cfg-mao-obra','ps_custo_mao'],['cfg-margem-min','ps_margem_min']]
-    .forEach(([id, key]) => {
-      const v = document.getElementById(id)?.value;
-      if (v) localStorage.setItem(key, v);
-    });
-  showToast('Custos salvos ✓');
-};
-function carregarConfigs() {
-  [['cfg-min-vendas','ps_min_vendas'],['cfg-min-score','ps_min_score'],
-   ['cfg-filamento','ps_custo_fil'],['cfg-energia','ps_custo_energia'],
-   ['cfg-mao-obra','ps_custo_mao'],['cfg-margem-min','ps_margem_min']]
-    .forEach(([id, key]) => {
-      const el = document.getElementById(id);
-      const v  = localStorage.getItem(key);
-      if (el && v) el.value = v;
-    });
+// ── HELPERS ───────────────────────────────────────────────────
+function verdictEmoji(v) {
+  return v === "PRODUZIR" ? "✅" : v === "AVALIAR" ? "⚠️" : v === "EVITAR" ? "❌" : "⬜";
+}
+function fmtNum(n) {
+  if (!n) return "0";
+  return n >= 1000 ? (n/1000).toFixed(1)+"k" : String(n);
+}
+function fmtMoney(n) {
+  if (!n) return "0,00";
+  return parseFloat(n).toFixed(2).replace(".", ",");
 }
 
-// ── LIMPAR CACHE (botão útil nas configs) ─────────────────────
-window.limparCacheModelos = function () {
-  localStorage.removeItem('ps_models_cache');
-  localStorage.removeItem('ps_models_cache_at');
-  localStorage.removeItem('ps_working_model');
-  showToast('Cache de modelos limpo ✓', 'success');
-  verificarApiKey();
-};
-
-// ── UTILS ─────────────────────────────────────────────────────
-function formatDate(iso) {
-  if (!iso) return '—';
-  return new Date(iso).toLocaleDateString('pt-BR');
+// ── TOAST ─────────────────────────────────────────────────────
+function showToast(msg, type = "") {
+  const t = document.getElementById("toast");
+  t.textContent = msg;
+  t.className   = "toast " + type + " show";
+  clearTimeout(t._timer);
+  t._timer = setTimeout(() => t.classList.remove("show"), 3200);
 }
-function verdictClass(v) {
-  return v==='PRODUZIR' ? 'verd-green' : v==='AVALIAR' ? 'verd-yellow' : v==='EVITAR' ? 'verd-red' : '';
-}
-window.showToast = function (msg, type = 'success') {
-  const el = document.getElementById('toast');
-  el.textContent = msg;
-  el.className = 'toast show ' + type;
-  clearTimeout(el._t);
-  el._t = setTimeout(() => { el.className = 'toast'; }, 3500);
-};

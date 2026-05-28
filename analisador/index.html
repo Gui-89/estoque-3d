@@ -201,6 +201,7 @@
       <div class="page-header"><div><h1>Configurações</h1><p class="page-sub">Chave Gemini (gratuita) e parâmetros de custo</p></div></div>
       <div class="config-layout">
 
+        <!-- Card Gemini API -->
         <div class="config-card gemini-card">
           <div class="gemini-badge">GRATUITO</div>
           <h3>🤖 Google Gemini API</h3>
@@ -221,12 +222,20 @@
               <button class="btn-primary" onclick="salvarApiKey()">Salvar</button>
             </div>
           </div>
-         <div id="cfg-key-status" class="cfg-status hidden"></div>
-        <button id="btn-testar-chave" class="btn-ghost" onclick="testarChaveGemini()"
-        style="width:100%;margin-top:10px;font-size:13px">
-        🔍 Testar Chave (diagnóstico de modelos)
-        </button>
+          <div id="cfg-key-status" class="cfg-status hidden"></div>
+          <div style="display:flex;gap:8px;margin-top:10px;">
+            <button id="btn-testar-chave" class="btn-ghost" onclick="testarChaveGemini()"
+              style="flex:1;font-size:13px">
+              🔍 Testar Chave (diagnóstico de modelos)
+            </button>
+            <button class="btn-ghost" onclick="limparCacheModelos()"
+              style="font-size:12px;white-space:nowrap" title="Limpa o cache de modelos e força redescoberta">
+              🗑 Limpar Cache
+            </button>
+          </div>
+        </div><!-- /.gemini-card -->
 
+        <!-- Card Filtros Padrão -->
         <div class="config-card">
           <h3>⚙️ Filtros Padrão</h3>
           <p class="config-desc">Valores padrão ao abrir o painel de produtos</p>
@@ -237,6 +246,7 @@
           <button class="btn-primary" onclick="salvarConfig()">Salvar</button>
         </div>
 
+        <!-- Card Custos -->
         <div class="config-card">
           <h3>🖨️ Seus Custos de Impressão</h3>
           <p class="config-desc">Usados para calcular margens reais nas análises profundas</p>
@@ -251,13 +261,15 @@
           <button class="btn-primary" onclick="salvarCustos()">Salvar Custos</button>
         </div>
 
+        <!-- Card Perigo -->
         <div class="config-card config-danger">
           <h3>⚠️ Zona de Perigo</h3>
           <p class="config-desc">Ações irreversíveis</p>
           <button class="btn-danger" onclick="limparTodosDados()">🗑️ Apagar todos os produtos</button>
         </div>
-      </div>
-    </div>
+
+      </div><!-- /.config-layout -->
+    </div><!-- /#tab-config -->
 
   </main>
 

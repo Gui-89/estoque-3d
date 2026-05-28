@@ -1,21 +1,23 @@
 /* ═══════════════════════════════════════════════════════════
-   PRINT SCOUT — app.js  v3
-   Fix: usa APENAS o modelo salvo; só faz fallback se ele falhar
+   PRINT SCOUT — app.js  v4
+   Fix: retry com backoff em 429 + fallback real entre cotas
    ═══════════════════════════════════════════════════════════ */
 
-// ── ESTADO GLOBAL ─────────────────────────────────────────────
-let currentUser       = null;
-let produtosSalvos    = [];
-let sortKey           = 'data';
-let nichoSelecionado  = '';
+let currentUser        = null;
+let produtosSalvos     = [];
+let sortKey            = 'data';
+let nichoSelecionado   = '';
 let plataformaSelecionada = 'Todas';
-let volumeMinimo      = 0;
+let volumeMinimo       = 0;
 let produtoParaAnalise = null;
 
-// Modelos de fallback — APENAS versões 2.x que existem na v1beta atual
-const GEMINI_FALLBACK_MODELS = [
+// Modelos em ordem de preferência — cada um tem cota SEPARADA na API
+// Se um modelo esgota o limite, o próximo usa sua própria cota
+const GEMINI_MODELS = [
   'gemini-2.0-flash',
   'gemini-2.0-flash-lite',
+  'gemini-1.5-flash',
+  'gemini-1.5-flash-8b',
 ];
 
 // ── INIT ──────────────────────────────────────────────────────
@@ -65,119 +67,170 @@ function sleep(ms) {
   return new Promise(r => setTimeout(r, ms));
 }
 
-// Faz uma única chamada a um modelo e retorna o objeto JSON parseado
-async function tryModel(model, prompt, maxTokens) {
-  const apiKey = getApiKey();
-  const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: {
-          temperature: 0.7,
-          maxOutputTokens: maxTokens,
-          responseMimeType: 'application/json'
+// Tenta um modelo com até 3 retries em caso de 429, com espera crescente
+async function tryModelWithRetry(model, prompt, maxTokens) {
+  const apiKey   = getApiKey();
+  const retryDelays = [8000, 15000, 25000]; // 8s, 15s, 25s entre retries
+
+  for (let attempt = 0; attempt <= retryDelays.length; attempt++) {
+    try {
+      const res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }] }],
+            generationConfig: {
+              temperature: 0.7,
+              maxOutputTokens: maxTokens,
+              responseMimeType: 'application/json'
+            }
+          })
         }
-      })
+      );
+
+      if (res.ok) {
+        const data = await res.json();
+        const raw  = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        if (!raw) throw Object.assign(new Error('Resposta vazia da IA.'), { status: 'empty' });
+
+        const clean = raw
+          .replace(/^```(?:json)?\s*/i, '')
+          .replace(/\s*```\s*$/,        '')
+          .trim();
+
+        try {
+          return JSON.parse(clean);
+        } catch {
+          throw Object.assign(new Error('JSON inválido na resposta.'), { status: 'parse' });
+        }
+      }
+
+      // Resposta de erro HTTP
+      const errBody  = await res.json().catch(() => ({}));
+      const httpCode = res.status;
+      const msg      = errBody.error?.message || `HTTP ${httpCode}`;
+
+      if (httpCode === 400) throw Object.assign(new Error(msg), { status: 400 });
+      if (httpCode === 404) throw Object.assign(new Error(msg), { status: 404 });
+
+      if (httpCode === 429) {
+        if (attempt < retryDelays.length) {
+          const wait = retryDelays[attempt];
+          const waitSec = Math.round(wait / 1000);
+          updateStatusLabel(`${model} — limite, aguardando ${waitSec}s…`, 'checking');
+          await sleep(wait);
+          continue; // tenta de novo no mesmo modelo
+        }
+        // Esgotou os retries neste modelo
+        throw Object.assign(new Error(msg), { status: 429, exhausted: true });
+      }
+
+      // Outros erros (500 etc.) — não faz retry
+      throw Object.assign(new Error(msg), { status: httpCode });
+
+    } catch (e) {
+      // Se o erro não é 429, propaga imediatamente
+      if (e.status !== 429) throw e;
+      // Se é 429 mas já era o último attempt, propaga
+      if (attempt >= retryDelays.length) throw e;
+      // Caso contrário o loop continua com o próximo attempt
     }
-  );
-
-  if (!res.ok) {
-    const errBody = await res.json().catch(() => ({}));
-    const e = new Error(errBody.error?.message || `HTTP ${res.status}`);
-    e.status = res.status;
-    throw e;
   }
-
-  const data = await res.json();
-  const raw  = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-  if (!raw) throw new Error('Resposta vazia da IA.');
-
-  // Remove blocos markdown que o modelo às vezes adiciona mesmo com responseMimeType json
-  const clean = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim();
-  return JSON.parse(clean);
 }
 
-// Chamada principal: tenta o modelo salvo primeiro; fallback apenas se falhar
+// Chamada principal: tenta cada modelo em sequência
+// Modelo salvo vai em primeiro; 429 esgotado => próximo modelo (cota separada)
 async function callGemini(prompt, maxTokens = 2048) {
   const apiKey = getApiKey();
   if (!apiKey) throw new Error('Configure sua chave Gemini gratuita em Configurações!');
 
-  // Monta lista: modelo salvo em primeiro, sem duplicatas
   const saved  = localStorage.getItem('ps_working_model');
   const models = saved
-    ? [saved, ...GEMINI_FALLBACK_MODELS.filter(m => m !== saved)]
-    : GEMINI_FALLBACK_MODELS;
+    ? [saved, ...GEMINI_MODELS.filter(m => m !== saved)]
+    : GEMINI_MODELS;
 
   let lastErr = null;
+  let allRateLimited = true;
 
   for (const model of models) {
     try {
       updateStatusLabel(`Conectando (${model})…`, 'checking');
-      const result = await tryModel(model, prompt, maxTokens);
-      // Sucesso — persiste o modelo vencedor
+      const result = await tryModelWithRetry(model, prompt, maxTokens);
+
+      // Sucesso
       localStorage.setItem('ps_working_model', model);
       updateStatusLabel(`Gemini ✓ (${model})`, 'online');
       return result;
+
     } catch (e) {
       lastErr = e;
-      console.warn(`[PrintScout] ${model} falhou: ${e.status} — ${e.message}`);
 
       if (e.status === 400) {
-        // Chave inválida — inutiliza tentar outros modelos
         updateStatusLabel('Chave inválida', 'offline');
         throw new Error('Chave API inválida. Verifique em Configurações (deve começar com "AIza").');
       }
 
-      if (e.status === 429) {
-        updateStatusLabel(`Limite atingido, aguardando…`, 'checking');
-        await sleep(4000);
-        // Continua para o próximo modelo
-      }
-
       if (e.status === 404) {
-        // Modelo não existe nesta conta — se era o salvo, limpa
+        // Modelo indisponível — limpa se era o salvo e tenta próximo
         if (saved === model) localStorage.removeItem('ps_working_model');
-        // Continua para o próximo
+        console.warn(`[PrintScout] ${model} não disponível (404), tentando próximo…`);
+        allRateLimited = false;
+        continue;
       }
 
-      // Para qualquer outro erro (500, rede, parse) também continua
+      if (e.status === 429 && e.exhausted) {
+        // Cota esgotada neste modelo — tenta próximo
+        console.warn(`[PrintScout] ${model} com cota esgotada, tentando próximo…`);
+        continue;
+      }
+
+      // Outro erro
+      allRateLimited = false;
+      console.warn(`[PrintScout] ${model} erro: ${e.status} — ${e.message}`);
+      continue;
     }
   }
 
+  // Todos falharam
   updateStatusLabel('Erro na API', 'offline');
 
-  if (lastErr?.status === 429) {
-    throw new Error('Limite de requisições atingido. Aguarde 1–2 min e tente novamente.');
+  if (allRateLimited || lastErr?.status === 429) {
+    throw new Error(
+      'Todos os modelos estão com cota esgotada no momento.\n' +
+      'Aguarde 5–10 minutos e tente novamente.\n' +
+      'Dica: a cota gratuita é de 15 req/min e 1.500 req/dia por modelo.'
+    );
   }
+
   if (lastErr?.status === 404) {
     throw new Error(
-      'Nenhum modelo Gemini disponível na sua chave. ' +
+      'Nenhum modelo Gemini disponível nesta chave. ' +
       'Vá em Configurações → Testar Chave para diagnosticar.'
     );
   }
-  throw new Error(lastErr?.message || 'Não foi possível conectar à IA. Verifique sua chave.');
+
+  throw new Error(lastErr?.message || 'Falha ao conectar à IA. Verifique sua chave em Configurações.');
 }
 
 function updateStatusLabel(text, state) {
   const dot = document.getElementById('status-dot');
   const lbl = document.getElementById('status-label');
   if (!dot || !lbl) return;
-  dot.className = 'status-dot ' + (state || '');
+  dot.className  = 'status-dot ' + (state || '');
   lbl.textContent = text;
 }
 
 function verificarApiKey() {
-  const key   = getApiKey();
-  const dot   = document.getElementById('status-dot');
-  const lbl   = document.getElementById('status-label');
+  const key = getApiKey();
+  const dot = document.getElementById('status-dot');
+  const lbl = document.getElementById('status-label');
   if (!key) {
-    dot.className = 'status-dot offline';
+    dot.className  = 'status-dot offline';
     lbl.textContent = 'Gemini não configurado';
   } else {
-    dot.className = 'status-dot online';
+    dot.className  = 'status-dot online';
     const m = localStorage.getItem('ps_working_model') || 'gemini-2.0-flash';
     lbl.textContent = `Gemini configurado ✓ (${m})`;
   }
@@ -190,7 +243,7 @@ window.salvarApiKey = function() {
     return;
   }
   localStorage.setItem('ps_gemini_key', key);
-  localStorage.removeItem('ps_working_model'); // força re-detecção
+  localStorage.removeItem('ps_working_model');
   document.getElementById('cfg-api-key').value = '';
   const st = document.getElementById('cfg-key-status');
   st.textContent = '✅ Chave salva! Clique em "Testar Chave" para detectar o melhor modelo.';
@@ -208,20 +261,13 @@ window.testarChaveGemini = async function() {
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Testando…'; }
 
   const st = document.getElementById('cfg-key-status');
-  st.textContent = '⏳ Testando modelos…';
+  st.innerHTML = '⏳ Testando modelos disponíveis…';
   st.className = 'cfg-status ok';
   st.classList.remove('hidden');
 
-  // Modelos a testar — versões conhecidas como disponíveis
-  const toTest = [
-    'gemini-2.0-flash',
-    'gemini-2.0-flash-lite',
-    'gemini-1.5-flash',
-    'gemini-1.5-pro',
-  ];
-
-  const lines = [];
-  let firstOk = null;
+  const toTest = [...GEMINI_MODELS];
+  const lines  = [];
+  let firstOk  = null;
 
   for (const model of toTest) {
     try {
@@ -240,30 +286,29 @@ window.testarChaveGemini = async function() {
         lines.push(`✅ ${model} — disponível`);
         if (!firstOk) firstOk = model;
       } else {
-        const status = r.status;
-        if (status === 429) {
-          lines.push(`⏳ ${model} — limite ativo (disponível)`);
+        const s = r.status;
+        if (s === 429) {
+          lines.push(`⏳ ${model} — limite ativo agora (cota disponível)`);
           if (!firstOk) firstOk = model;
-        } else if (status === 404) {
+        } else if (s === 404) {
           lines.push(`❌ ${model} — não disponível nesta conta`);
-        } else if (status === 400) {
-          lines.push(`🔑 ${model} — chave inválida (erro 400)`);
-          firstOk = null;
+        } else if (s === 400) {
+          lines.push(`🔑 Chave inválida (erro 400)`);
           break;
         } else {
-          lines.push(`⚠️ ${model} — erro ${status}`);
+          lines.push(`⚠️ ${model} — erro ${s}`);
         }
       }
-    } catch (e) {
+    } catch {
       lines.push(`❌ ${model} — falha de rede`);
     }
   }
 
   if (firstOk) {
     localStorage.setItem('ps_working_model', firstOk);
-    lines.push(`\n→ Modelo padrão definido: ${firstOk}`);
+    lines.push(`<br><strong>→ Modelo padrão definido: ${firstOk}</strong>`);
   } else {
-    lines.push('\n→ Nenhum modelo disponível. Verifique a chave.');
+    lines.push('<br><strong>→ Nenhum modelo disponível. Aguarde alguns minutos ou verifique a chave.</strong>');
   }
 
   st.innerHTML = lines.join('<br>');
@@ -404,7 +449,7 @@ Regras:
     }
 
     renderDiscovery(resultado, produtos);
-    showToast(`${produtos.length} produtos encontrados no nicho!`, 'success');
+    showToast(`${produtos.length} produtos encontrados!`, 'success');
   } catch (e) {
     showToast('Erro: ' + e.message, 'error');
     if (e.message.includes('Configurações')) switchTab('config');
@@ -441,7 +486,6 @@ function renderDiscovery(meta, produtos) {
     const scoreGeral = ((p.printabilidade + p.oportunidade + (10 - p.saturacao)) / 3).toFixed(1);
     const verdClass  = p.veredicto === 'PRODUZIR' ? 'PRODUZIR' : p.veredicto === 'AVALIAR' ? 'AVALIAR' : 'EVITAR';
     const vendasFmt  = p.vendas_dia_estimadas >= 1000 ? (p.vendas_dia_estimadas / 1000).toFixed(1) + 'k' : p.vendas_dia_estimadas;
-
     return `
     <div class="discovery-card ${verdClass}" onclick="abrirAnalise(${i})" data-index="${i}">
       <div class="dc-header">
@@ -451,22 +495,10 @@ function renderDiscovery(meta, produtos) {
       <div class="dc-nome">${p.nome}</div>
       <div class="dc-desc">${p.descricao}</div>
       <div class="dc-scores">
-        <div class="dc-score-item">
-          <div class="dc-score-val" style="color:var(--accent)">${p.printabilidade}</div>
-          <div class="dc-score-lbl">Print</div>
-        </div>
-        <div class="dc-score-item">
-          <div class="dc-score-val" style="color:var(--blue)">${p.oportunidade}</div>
-          <div class="dc-score-lbl">Oport.</div>
-        </div>
-        <div class="dc-score-item">
-          <div class="dc-score-val" style="color:var(--yellow)">${p.saturacao}</div>
-          <div class="dc-score-lbl">Satur.</div>
-        </div>
-        <div class="dc-score-item">
-          <div class="dc-score-val" style="color:var(--purple)">${scoreGeral}</div>
-          <div class="dc-score-lbl">Score</div>
-        </div>
+        <div class="dc-score-item"><div class="dc-score-val" style="color:var(--accent)">${p.printabilidade}</div><div class="dc-score-lbl">Print</div></div>
+        <div class="dc-score-item"><div class="dc-score-val" style="color:var(--blue)">${p.oportunidade}</div><div class="dc-score-lbl">Oport.</div></div>
+        <div class="dc-score-item"><div class="dc-score-val" style="color:var(--yellow)">${p.saturacao}</div><div class="dc-score-lbl">Satur.</div></div>
+        <div class="dc-score-item"><div class="dc-score-val" style="color:var(--purple)">${scoreGeral}</div><div class="dc-score-lbl">Score</div></div>
       </div>
       <div class="dc-stats">
         <span class="dc-stat">📦 ~${vendasFmt}/dia</span>
@@ -480,7 +512,6 @@ function renderDiscovery(meta, produtos) {
 
   window._discoveryProdutos = produtos;
   window._discoveryMeta     = meta;
-
   section.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
@@ -491,7 +522,6 @@ window.abrirAnalise = async function(index) {
   if (!produto) return;
 
   produtoParaAnalise = { ...produto, nicho: meta.nicho, plataforma: meta.plataforma };
-
   document.getElementById('analise-loading').classList.remove('hidden');
   document.getElementById('analise-resultado').classList.add('hidden');
   document.getElementById('analise-modal').classList.remove('hidden');
@@ -571,7 +601,6 @@ Retorne SOMENTE JSON válido:
 // ── RENDER ANÁLISE PROFUNDA ───────────────────────────────────
 function renderAnalise(r) {
   const p = r._produto;
-
   document.getElementById('analise-loading').classList.add('hidden');
   const container = document.getElementById('analise-resultado');
   container.classList.remove('hidden');
@@ -587,34 +616,29 @@ function renderAnalise(r) {
       </div>
       <span class="verdict-badge ${verdClass}">${r.veredicto}</span>
     </div>
-
     <div class="scores-row">
       ${renderCircle('circle-p', r.printabilidade, 'Printabilidade', 'var(--accent)')}
       ${renderCircle('circle-o', r.oportunidade,   'Oportunidade',   'var(--blue)')}
       ${renderCircle('circle-s', r.saturacao,      'Saturação',      'var(--yellow)')}
       ${renderCircle('circle-g', parseFloat(scoreGeral), 'Score Geral', 'var(--purple)')}
     </div>
-
     <div class="info-grid">
       <div class="info-card"><div class="info-icon">🧵</div><div class="info-label">Material</div><div class="info-value">${r.material_principal}</div><div class="info-sub">${r.material_alternativo || 'sem alternativa'}</div></div>
       <div class="info-card"><div class="info-icon">⏱</div><div class="info-label">Tempo Print</div><div class="info-value">${r.tempo_impressao}</div><div class="info-sub">por unidade</div></div>
       <div class="info-card"><div class="info-icon">💰</div><div class="info-label">Custo Total</div><div class="info-value">R$ ${(r.custo_total_min||0).toFixed(2)}–${(r.custo_total_max||0).toFixed(2)}</div><div class="info-sub">energia + material + mão de obra</div></div>
       <div class="info-card info-highlight"><div class="info-icon">📈</div><div class="info-label">Margem Est.</div><div class="info-value">${r.margem_estimada_min||0}%–${r.margem_estimada_max||0}%</div><div class="info-sub">preço: R$ ${(r.preco_sugerido_min||0).toFixed(2)}–${(r.preco_sugerido_max||0).toFixed(2)}</div></div>
     </div>
-
     <div class="tags-row">
       <div class="tag-item"><span class="tag-label">Dificuldade:</span><span class="tag-value">${r.dificuldade}</span></div>
       <div class="tag-item"><span class="tag-label">Concorrência:</span><span class="tag-value">${r.nivel_concorrencia}</span></div>
       <div class="tag-item"><span class="tag-label">Vendas/dia:</span><span class="tag-value">~${p.vendas_dia_estimadas}</span></div>
     </div>
-
     <div class="print-config-box">
       <div class="print-config-title">⚙️ Configuração de Impressão Sugerida</div>
       <div class="print-config-grid">
         ${Object.entries(r.config_impressao || {}).filter(([k]) => k !== 'tempo_total_horas').map(([k,v]) => `<span class="cfg-chip"><strong>${k.replace(/_/g,' ')}:</strong> ${v}</span>`).join('')}
       </div>
     </div>
-
     <div class="pros-cons-row">
       <div class="pros-box">
         <div class="pros-title">✅ Pontos Favoráveis</div>
@@ -625,39 +649,32 @@ function renderAnalise(r) {
         <ul>${(r.riscos||[]).map(ri => `<li>${ri}</li>`).join('')}</ul>
       </div>
     </div>
-
     <div class="analise-box">
       <div class="analise-title">🤖 Análise da IA</div>
       <p>${r.analise_resumo}</p>
     </div>
-
     ${r.ideias_variacao?.length ? `
     <div class="analise-box">
-      <div class="analise-title">💡 Ideias de Variação do Produto</div>
-      <ul style="margin-top:8px;padding-left:16px;color:var(--text2);font-size:13px;line-height:1.8">${r.ideias_variacao.map(d => `<li>${d}</li>`).join('')}</ul>
+      <div class="analise-title">💡 Ideias de Variação</div>
+      <ul style="margin-top:8px;padding-left:16px;color:var(--text2);font-size:13px;line-height:1.8">${r.ideias_variacao.map(d=>`<li>${d}</li>`).join('')}</ul>
     </div>` : ''}
-
     <div class="analise-box">
       <div class="analise-title">🚀 Como Se Diferenciar</div>
-      <ul style="margin-top:8px;padding-left:16px;color:var(--text2);font-size:13px;line-height:1.8">${(r.diferenciais||[]).map(d => `<li>${d}</li>`).join('')}</ul>
+      <ul style="margin-top:8px;padding-left:16px;color:var(--text2);font-size:13px;line-height:1.8">${(r.diferenciais||[]).map(d=>`<li>${d}</li>`).join('')}</ul>
     </div>
-
     ${r.alertas?.length ? `
-    <div class="analise-box" style="border-left:3px solid var(--yellow);margin-top:12px">
+    <div class="analise-box" style="border-left:3px solid var(--yellow)">
       <div class="analise-title" style="color:var(--yellow)">⚠️ Alertas</div>
-      <ul style="margin-top:8px;padding-left:16px;color:var(--text2);font-size:13px;line-height:1.8">${r.alertas.map(a => `<li>${a}</li>`).join('')}</ul>
+      <ul style="margin-top:8px;padding-left:16px;color:var(--text2);font-size:13px;line-height:1.8">${r.alertas.map(a=>`<li>${a}</li>`).join('')}</ul>
     </div>` : ''}
-
     <div class="keywords-box">
       <div class="keywords-title">🔍 Palavras-chave para Shopee / TikTok</div>
-      <div class="keywords-list">${(r.keywords_shopee||[]).map(k => `<span class="kw-tag">${k}</span>`).join('')}</div>
+      <div class="keywords-list">${(r.keywords_shopee||[]).map(k=>`<span class="kw-tag">${k}</span>`).join('')}</div>
     </div>
-
     <div class="result-actions" style="padding:20px 0 0">
       <button class="btn-save" onclick="salvarAnalise()">💾 Salvar no Firebase</button>
       <button class="btn-ghost" onclick="fecharModal('analise-modal')">Fechar</button>
-    </div>
-  `;
+    </div>`;
 
   setTimeout(() => animarCirculos(r), 100);
   window._currentAnalise = r;
@@ -682,20 +699,19 @@ function renderCircle(id, value, label, color) {
 }
 
 function animarCirculos(r) {
-  const valores = {
+  const circ = 213.6;
+  const vals = {
     'circle-p': r.printabilidade,
     'circle-o': r.oportunidade,
     'circle-s': r.saturacao,
     'circle-g': parseFloat(((r.printabilidade + r.oportunidade + (10 - r.saturacao)) / 3).toFixed(1))
   };
-  const circ = 213.6;
-  Object.entries(valores).forEach(([id, val]) => {
+  Object.entries(vals).forEach(([id, val]) => {
     const el = document.getElementById(id);
-    if (el) {
-      const v = Math.min(10, Math.max(0, val || 0));
-      el.style.transition = 'stroke-dashoffset 1s cubic-bezier(.4,0,.2,1)';
-      el.style.strokeDashoffset = (circ - (v / 10) * circ).toFixed(1);
-    }
+    if (!el) return;
+    const v = Math.min(10, Math.max(0, val || 0));
+    el.style.transition = 'stroke-dashoffset 1s cubic-bezier(.4,0,.2,1)';
+    el.style.strokeDashoffset = (circ - (v / 10) * circ).toFixed(1);
   });
 }
 
@@ -704,55 +720,37 @@ window.salvarAnalise = async function() {
   const r = window._currentAnalise;
   if (!r || !currentUser) return;
   const p = r._produto || {};
-
   const btn = document.querySelector('#analise-resultado .btn-save');
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Salvando...'; }
 
   try {
     const scoreGeral = ((r.printabilidade + r.oportunidade + (10 - r.saturacao)) / 3);
     const payload = {
-      nome:              p.nome,
-      descricao:         p.descricao || '',
-      nicho:             p.nicho || '',
-      plataforma:        p.plataforma || 'Shopee',
-      categoria:         p.nicho || '',
-      precoMin:          p.preco_min || 0,
-      precoMax:          p.preco_max || 0,
-      vendasDia:         p.vendas_dia_estimadas || 0,
-      concorrentes:      p.concorrentes_estimados || 0,
-      printabilidade:    r.printabilidade,
-      oportunidade:      r.oportunidade,
-      saturacao:         r.saturacao,
-      scoreTotal:        scoreGeral.toFixed(2),
-      veredicto:         r.veredicto,
-      materialPrincipal: r.material_principal,
-      materialAlt:       r.material_alternativo || '',
-      dificuldade:       r.dificuldade,
-      nivelConcorrencia: r.nivel_concorrencia,
-      tempoImpressao:    r.tempo_impressao,
-      custoMin:          r.custo_material_min || 0,
-      custoMax:          r.custo_material_max || 0,
-      custoTotalMin:     r.custo_total_min || 0,
-      custoTotalMax:     r.custo_total_max || 0,
-      margemMin:         r.margem_estimada_min || 0,
-      margemMax:         r.margem_estimada_max || 0,
-      margemEstimada:    r.margem_estimada_max || 0,
-      precoSugeridoMin:  r.preco_sugerido_min || 0,
-      precoSugeridoMax:  r.preco_sugerido_max || 0,
-      configImpressao:   r.config_impressao || {},
-      pontosPositivos:   r.pontos_favoraveis || [],
-      riscos:            r.riscos || [],
-      analise:           r.analise_resumo || '',
-      keywords:          r.keywords_shopee || [],
-      diferenciais:      r.diferenciais || [],
-      ideiasVariacao:    r.ideias_variacao || [],
-      alertas:           r.alertas || [],
-      salvoEm: new Date().toISOString(),
-      usuario: currentUser.email
+      nome: p.nome, descricao: p.descricao || '',
+      nicho: p.nicho || '', plataforma: p.plataforma || 'Shopee',
+      categoria: p.nicho || '',
+      precoMin: p.preco_min || 0, precoMax: p.preco_max || 0,
+      vendasDia: p.vendas_dia_estimadas || 0,
+      concorrentes: p.concorrentes_estimados || 0,
+      printabilidade: r.printabilidade, oportunidade: r.oportunidade, saturacao: r.saturacao,
+      scoreTotal: scoreGeral.toFixed(2), veredicto: r.veredicto,
+      materialPrincipal: r.material_principal, materialAlt: r.material_alternativo || '',
+      dificuldade: r.dificuldade, nivelConcorrencia: r.nivel_concorrencia,
+      tempoImpressao: r.tempo_impressao,
+      custoMin: r.custo_material_min || 0, custoMax: r.custo_material_max || 0,
+      custoTotalMin: r.custo_total_min || 0, custoTotalMax: r.custo_total_max || 0,
+      margemMin: r.margem_estimada_min || 0, margemMax: r.margem_estimada_max || 0,
+      margemEstimada: r.margem_estimada_max || 0,
+      precoSugeridoMin: r.preco_sugerido_min || 0, precoSugeridoMax: r.preco_sugerido_max || 0,
+      configImpressao: r.config_impressao || {},
+      pontosPositivos: r.pontos_favoraveis || [], riscos: r.riscos || [],
+      analise: r.analise_resumo || '', keywords: r.keywords_shopee || [],
+      diferenciais: r.diferenciais || [], ideiasVariacao: r.ideias_variacao || [],
+      alertas: r.alertas || [],
+      salvoEm: new Date().toISOString(), usuario: currentUser.email
     };
-
     await psDB.collection('produtos').add(payload);
-    if (btn) { btn.textContent = '✅ Salvo!'; }
+    if (btn) btn.textContent = '✅ Salvo!';
     showToast('Produto salvo no Firebase! ✓', 'success');
     window._currentAnalise = null;
   } catch (e) {
@@ -761,21 +759,19 @@ window.salvarAnalise = async function() {
   }
 };
 
-// ── FIRESTORE — ESCUTA ────────────────────────────────────────
+// ── FIRESTORE ─────────────────────────────────────────────────
 function iniciarEscutadores() {
   psDB.collection('produtos')
     .where('usuario', '==', currentUser.email)
     .orderBy('salvoEm', 'desc')
     .onSnapshot(snap => {
       produtosSalvos = snap.docs.map(d => ({ _id: d.id, ...d.data() }));
-      atualizarDashboard();
-      renderProdutos();
+      atualizarDashboard(); renderProdutos();
     }, err => {
-      console.warn('Escuta Firestore:', err.message);
+      console.warn('Firestore:', err.message);
       psDB.collection('produtos').orderBy('salvoEm', 'desc').onSnapshot(snap => {
         produtosSalvos = snap.docs.map(d => ({ _id: d.id, ...d.data() })).filter(p => p.usuario === currentUser.email);
-        atualizarDashboard();
-        renderProdutos();
+        atualizarDashboard(); renderProdutos();
       });
     });
 }
@@ -790,31 +786,26 @@ function atualizarDashboard() {
   document.getElementById('kpi-total').textContent    = total || '0';
   document.getElementById('kpi-produzir').textContent = produzir || '0';
 
-  const avgVendas = total > 0 ? Math.round(produtosSalvos.reduce((s, p) => s + (p.vendasDia || 0), 0) / total) : '—';
+  const avgVendas = total > 0 ? Math.round(produtosSalvos.reduce((s,p)=>s+(p.vendasDia||0),0)/total) : '—';
   document.getElementById('kpi-vendas').textContent = avgVendas;
 
-  const avgScore = total > 0 ? (produtosSalvos.reduce((s, p) => s + Number(p.scoreTotal || 0), 0) / total).toFixed(1) : '—';
+  const avgScore = total > 0 ? (produtosSalvos.reduce((s,p)=>s+Number(p.scoreTotal||0),0)/total).toFixed(1) : '—';
   document.getElementById('kpi-score').textContent = avgScore;
 
-  const setBar = (id, count) => {
-    const pct = total > 0 ? Math.round((count / total) * 100) : 0;
-    const el  = document.getElementById(id);
-    if (el) el.style.width = pct + '%';
-  };
-  setBar('bar-produzir', produzir);
-  setBar('bar-avaliar',  avaliar);
-  setBar('bar-evitar',   evitar);
-
   ['produzir','avaliar','evitar'].forEach(k => {
-    const el = document.getElementById('count-' + k);
-    if (el) el.textContent = { produzir, avaliar, evitar }[k];
+    const count = { produzir, avaliar, evitar }[k];
+    const pct   = total > 0 ? Math.round((count/total)*100) : 0;
+    const bar   = document.getElementById('bar-' + k);
+    const cnt   = document.getElementById('count-' + k);
+    if (bar) bar.style.width = pct + '%';
+    if (cnt) cnt.textContent = count;
   });
 
   const topDiv = document.getElementById('top-oportunidades');
-  const top5   = [...produtosSalvos].sort((a, b) => b.scoreTotal - a.scoreTotal).slice(0, 5);
+  const top5   = [...produtosSalvos].sort((a,b)=>b.scoreTotal-a.scoreTotal).slice(0,5);
   topDiv.innerHTML = !top5.length
     ? `<div class="empty-state"><div class="empty-icon">◎</div><p>Nenhum produto salvo ainda.</p><button class="btn-ghost" onclick="switchTab('buscar')">Buscar primeiro nicho →</button></div>`
-    : top5.map((p, i) => `
+    : top5.map((p,i) => `
       <div class="top-item" onclick="abrirModal('${p._id}')">
         <div class="top-rank ${i===0?'r1':i===1?'r2':i===2?'r3':''}">#${i+1}</div>
         <div class="top-info"><div class="top-nome">${p.nome}</div><div class="top-meta">${p.plataforma||''} · ${p.vendasDia||0} vendas/dia</div></div>
@@ -822,7 +813,7 @@ function atualizarDashboard() {
       </div>`).join('');
 
   const recentesDiv = document.getElementById('recentes-list');
-  const recentes    = produtosSalvos.slice(0, 5);
+  const recentes    = produtosSalvos.slice(0,5);
   recentesDiv.innerHTML = !recentes.length
     ? '<div class="empty-mini">Nenhum produto ainda</div>'
     : recentes.map(p => `
@@ -835,15 +826,14 @@ function atualizarDashboard() {
 // ── RENDER PRODUTOS ───────────────────────────────────────────
 window.aplicarFiltros = function() { renderProdutos(); };
 window.limparFiltros  = function() {
-  ['filter-veredicto','filter-plataforma','filter-vendas','filter-score','filter-busca'].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.value = '';
+  ['filter-veredicto','filter-plataforma','filter-vendas','filter-score','filter-busca'].forEach(id=>{
+    const el = document.getElementById(id); if (el) el.value='';
   });
   renderProdutos();
 };
 window.sortProdutos = function(key) {
   sortKey = key;
-  document.querySelectorAll('.sort-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.sort-btn').forEach(b=>b.classList.remove('active'));
   document.querySelector(`[data-sort="${key}"]`)?.classList.add('active');
   renderProdutos();
 };
@@ -854,18 +844,18 @@ function renderProdutos() {
   const fPlat  = document.getElementById('filter-plataforma')?.value || '';
   const fVend  = Number(document.getElementById('filter-vendas')?.value) || 0;
   const fScore = Number(document.getElementById('filter-score')?.value) || 0;
-  const fBusca = (document.getElementById('filter-busca')?.value || '').toLowerCase();
+  const fBusca = (document.getElementById('filter-busca')?.value||'').toLowerCase();
 
-  if (fVerd)  dados = dados.filter(p => p.veredicto === fVerd);
-  if (fPlat)  dados = dados.filter(p => (p.plataforma || '').includes(fPlat));
-  if (fVend)  dados = dados.filter(p => (p.vendasDia || 0) >= fVend);
-  if (fScore) dados = dados.filter(p => Number(p.scoreTotal || 0) >= fScore);
-  if (fBusca) dados = dados.filter(p => (p.nome || '').toLowerCase().includes(fBusca));
+  if (fVerd)  dados = dados.filter(p=>p.veredicto===fVerd);
+  if (fPlat)  dados = dados.filter(p=>(p.plataforma||'').includes(fPlat));
+  if (fVend)  dados = dados.filter(p=>(p.vendasDia||0)>=fVend);
+  if (fScore) dados = dados.filter(p=>Number(p.scoreTotal||0)>=fScore);
+  if (fBusca) dados = dados.filter(p=>(p.nome||'').toLowerCase().includes(fBusca));
 
-  dados.sort((a, b) => {
-    if (sortKey === 'score')  return Number(b.scoreTotal||0) - Number(a.scoreTotal||0);
-    if (sortKey === 'vendas') return (b.vendasDia||0) - (a.vendasDia||0);
-    if (sortKey === 'margem') return (b.margemEstimada||0) - (a.margemEstimada||0);
+  dados.sort((a,b)=>{
+    if (sortKey==='score')  return Number(b.scoreTotal||0)-Number(a.scoreTotal||0);
+    if (sortKey==='vendas') return (b.vendasDia||0)-(a.vendasDia||0);
+    if (sortKey==='margem') return (b.margemEstimada||0)-(a.margemEstimada||0);
     return (b.salvoEm||'').localeCompare(a.salvoEm||'');
   });
 
@@ -877,7 +867,6 @@ function renderProdutos() {
     grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1;text-align:center;padding:60px"><div class="empty-icon">◫</div><p>Nenhum produto encontrado.</p></div>`;
     return;
   }
-
   grid.innerHTML = dados.map(p => {
     const v     = p.veredicto || 'pendente';
     const score = Number(p.scoreTotal||0).toFixed(1);
@@ -902,67 +891,55 @@ function renderProdutos() {
   }).join('');
 }
 
-// ── MODAL DETALHES ────────────────────────────────────────────
+// ── MODAL ─────────────────────────────────────────────────────
 window.abrirModal = function(id) {
-  const p = produtosSalvos.find(x => x._id === id);
+  const p = produtosSalvos.find(x=>x._id===id);
   if (!p) return;
   document.getElementById('modal-content').innerHTML = `
     <button class="modal-close" onclick="fecharModal('produto-modal')">✕</button>
     <div class="modal-title">${p.nome}</div>
     <div class="modal-sub">${p.plataforma||''} · ${p.nicho||p.categoria||''} · Salvo em ${formatDate(p.salvoEm)}</div>
     <span class="verdict-badge ${p.veredicto}" style="display:inline-block;margin-bottom:20px">${p.veredicto||'PENDENTE'}</span>
-    <div class="modal-section">
-      <div class="modal-section-title">Scores</div>
+    <div class="modal-section"><div class="modal-section-title">Scores</div>
       <div class="modal-grid">
         <div class="modal-stat"><div class="modal-stat-val" style="color:var(--accent)">${p.printabilidade||0}</div><div class="modal-stat-lbl">Printabilidade</div></div>
         <div class="modal-stat"><div class="modal-stat-val" style="color:var(--blue)">${p.oportunidade||0}</div><div class="modal-stat-lbl">Oportunidade</div></div>
         <div class="modal-stat"><div class="modal-stat-val" style="color:var(--yellow)">${p.saturacao||0}</div><div class="modal-stat-lbl">Saturação</div></div>
-      </div>
-    </div>
-    <div class="modal-section">
-      <div class="modal-section-title">Produção</div>
+      </div></div>
+    <div class="modal-section"><div class="modal-section-title">Produção</div>
       <div class="modal-grid">
         <div class="modal-stat"><div class="modal-stat-val">${p.materialPrincipal||'—'}</div><div class="modal-stat-lbl">Material</div></div>
         <div class="modal-stat"><div class="modal-stat-val">${p.tempoImpressao||'—'}</div><div class="modal-stat-lbl">Tempo</div></div>
         <div class="modal-stat"><div class="modal-stat-val">R$ ${(p.custoTotalMin||p.custoMin||0).toFixed(2)}</div><div class="modal-stat-lbl">Custo Mín.</div></div>
-      </div>
-    </div>
-    <div class="modal-section">
-      <div class="modal-section-title">Mercado</div>
+      </div></div>
+    <div class="modal-section"><div class="modal-section-title">Mercado</div>
       <div class="modal-grid">
         <div class="modal-stat"><div class="modal-stat-val">R$ ${p.precoMin||0}–${p.precoMax||0}</div><div class="modal-stat-lbl">Preço Mercado</div></div>
         <div class="modal-stat"><div class="modal-stat-val">${p.vendasDia||0}/dia</div><div class="modal-stat-lbl">Vendas Est.</div></div>
         <div class="modal-stat"><div class="modal-stat-val">${p.margemMax||p.margemEstimada||0}%</div><div class="modal-stat-lbl">Margem Máx.</div></div>
-      </div>
-    </div>
-    ${p.analise ? `<div class="modal-section"><div class="modal-section-title">Análise da IA</div><p style="font-size:13px;color:var(--text2);line-height:1.7">${p.analise}</p></div>` : ''}
-    ${p.keywords?.length ? `<div class="modal-section"><div class="modal-section-title">Keywords</div><div class="keywords-list">${p.keywords.map(k=>`<span class="kw-tag">${k}</span>`).join('')}</div></div>` : ''}
-  `;
+      </div></div>
+    ${p.analise?`<div class="modal-section"><div class="modal-section-title">Análise da IA</div><p style="font-size:13px;color:var(--text2);line-height:1.7">${p.analise}</p></div>`:''}
+    ${p.keywords?.length?`<div class="modal-section"><div class="modal-section-title">Keywords</div><div class="keywords-list">${p.keywords.map(k=>`<span class="kw-tag">${k}</span>`).join('')}</div></div>`:''}`;
   document.getElementById('produto-modal').classList.remove('hidden');
 };
+window.fecharModal = function(id) { document.getElementById(id)?.classList.add('hidden'); };
 
-window.fecharModal = function(id) {
-  document.getElementById(id)?.classList.add('hidden');
-};
-
-// ── EXCLUIR / LIMPAR ──────────────────────────────────────────
+// ── EXCLUIR ───────────────────────────────────────────────────
 window.excluirProduto = async function(id, nome) {
   if (!confirm(`Excluir "${nome}"?`)) return;
-  try {
-    await psDB.collection('produtos').doc(id).delete();
-    showToast('Produto excluído ✓');
-  } catch (e) { showToast('Erro: ' + e.message, 'error'); }
+  try { await psDB.collection('produtos').doc(id).delete(); showToast('Produto excluído ✓'); }
+  catch (e) { showToast('Erro: '+e.message,'error'); }
 };
 window.limparTodosDados = async function() {
   if (!confirm('⚠️ Apagar TODOS os seus produtos?')) return;
   if (!confirm('Confirma? Ação irreversível!')) return;
   try {
-    const snap  = await psDB.collection('produtos').where('usuario', '==', currentUser.email).get();
+    const snap  = await psDB.collection('produtos').where('usuario','==',currentUser.email).get();
     const batch = psDB.batch();
-    snap.docs.forEach(d => batch.delete(d.ref));
+    snap.docs.forEach(d=>batch.delete(d.ref));
     await batch.commit();
-    showToast('Todos os produtos apagados', 'error');
-  } catch (e) { showToast('Erro: ' + e.message, 'error'); }
+    showToast('Todos os produtos apagados','error');
+  } catch(e) { showToast('Erro: '+e.message,'error'); }
 };
 
 // ── CONFIGS ───────────────────────────────────────────────────
@@ -975,33 +952,25 @@ window.salvarConfig = function() {
 };
 window.salvarCustos = function() {
   [['cfg-filamento','ps_custo_fil'],['cfg-energia','ps_custo_energia'],['cfg-mao-obra','ps_custo_mao'],['cfg-margem-min','ps_margem_min']]
-    .forEach(([id, key]) => { const v = document.getElementById(id)?.value; if (v) localStorage.setItem(key, v); });
+    .forEach(([id,key])=>{ const v=document.getElementById(id)?.value; if(v) localStorage.setItem(key,v); });
   showToast('Custos salvos ✓');
 };
 function carregarConfigs() {
   [['cfg-min-vendas','ps_min_vendas'],['cfg-min-score','ps_min_score'],['cfg-filamento','ps_custo_fil'],['cfg-energia','ps_custo_energia'],['cfg-mao-obra','ps_custo_mao'],['cfg-margem-min','ps_margem_min']]
-    .forEach(([id, key]) => { const el = document.getElementById(id); const v = localStorage.getItem(key); if (el && v) el.value = v; });
+    .forEach(([id,key])=>{ const el=document.getElementById(id); const v=localStorage.getItem(key); if(el&&v) el.value=v; });
 }
 
 // ── UTILS ─────────────────────────────────────────────────────
-function formatDate(iso) {
-  if (!iso) return '—';
-  return new Date(iso).toLocaleDateString('pt-BR');
-}
-function verdictClass(v) {
-  return v === 'PRODUZIR' ? 'verd-green' : v === 'AVALIAR' ? 'verd-yellow' : v === 'EVITAR' ? 'verd-red' : '';
-}
-window.showToast = function(msg, type = 'success') {
+function formatDate(iso) { if(!iso) return '—'; return new Date(iso).toLocaleDateString('pt-BR'); }
+function verdictClass(v) { return v==='PRODUZIR'?'verd-green':v==='AVALIAR'?'verd-yellow':v==='EVITAR'?'verd-red':''; }
+window.showToast = function(msg, type='success') {
   const el = document.getElementById('toast');
   el.textContent = msg;
   el.className = 'toast show ' + type;
   clearTimeout(el._t);
-  el._t = setTimeout(() => { el.className = 'toast'; }, 3500);
+  el._t = setTimeout(()=>{ el.className='toast'; }, 3500);
 };
 
-window.switchTab     = window.switchTab;
-window.buscarNicho   = window.buscarNicho;
-window.abrirAnalise  = window.abrirAnalise;
-window.salvarAnalise = window.salvarAnalise;
-window.fecharModal   = window.fecharModal;
-window.abrirModal    = window.abrirModal;
+window.switchTab=window.switchTab; window.buscarNicho=window.buscarNicho;
+window.abrirAnalise=window.abrirAnalise; window.salvarAnalise=window.salvarAnalise;
+window.fecharModal=window.fecharModal; window.abrirModal=window.abrirModal;

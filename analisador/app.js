@@ -1,15 +1,15 @@
 /* ═══════════════════════════════════════════════════════════
-   PRINT SCOUT — app.js  v5
-   Fix: busca dinâmica de modelos disponíveis na chave Gemini
+   PRINT SCOUT — app.js  v6
+   Fix: remove responseMimeType, JSON robusto, sem loop infinito
    ═══════════════════════════════════════════════════════════ */
 
-let currentUser        = null;
-let produtosSalvos     = [];
-let sortKey            = 'data';
-let nichoSelecionado   = '';
+let currentUser           = null;
+let produtosSalvos        = [];
+let sortKey               = 'data';
+let nichoSelecionado      = '';
 let plataformaSelecionada = 'Todas';
-let volumeMinimo       = 0;
-let produtoParaAnalise = null;
+let volumeMinimo          = 0;
+let produtoParaAnalise    = null;
 
 // ── INIT ──────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
@@ -44,31 +44,44 @@ function showApp(user) {
   const img = document.getElementById('user-photo-display');
   if (img && user.photoURL) img.src = user.photoURL;
 }
-window.loginGoogle = function() {
+window.loginGoogle = function () {
   const provider = new firebase.auth.GoogleAuthProvider();
   psAuth.signInWithPopup(provider).catch(e => showToast(e.message, 'error'));
 };
-window.logoutUser = function() { psAuth.signOut(); };
+window.logoutUser = function () { psAuth.signOut(); };
 
 // ── GEMINI API ────────────────────────────────────────────────
-function getApiKey() {
-  return localStorage.getItem('ps_gemini_key') || '';
-}
-function sleep(ms) {
-  return new Promise(r => setTimeout(r, ms));
+function getApiKey() { return localStorage.getItem('ps_gemini_key') || ''; }
+function sleep(ms)   { return new Promise(r => setTimeout(r, ms)); }
+
+/* Extrai o primeiro bloco JSON válido de uma string qualquer */
+function extractJSON(raw) {
+  if (!raw) throw new Error('Resposta vazia da IA.');
+
+  // Remove fences markdown
+  let s = raw.replace(/^```(?:json)?\s*/im, '').replace(/\s*```\s*$/m, '').trim();
+
+  // Tenta parse direto
+  try { return JSON.parse(s); } catch (_) {}
+
+  // Procura pelo primeiro { ... } balanceado
+  const start = s.indexOf('{');
+  if (start === -1) throw new Error('Nenhum JSON encontrado na resposta.');
+  let depth = 0, end = -1;
+  for (let i = start; i < s.length; i++) {
+    if (s[i] === '{') depth++;
+    else if (s[i] === '}') { depth--; if (depth === 0) { end = i; break; } }
+  }
+  if (end === -1) throw new Error('JSON incompleto na resposta.');
+  try { return JSON.parse(s.slice(start, end + 1)); }
+  catch (e) { throw new Error('JSON inválido: ' + e.message); }
 }
 
-/* ─────────────────────────────────────────────────────────────
-   NOVO: busca quais modelos estão realmente disponíveis
-   na chave do usuário, em vez de depender de lista hardcoded
-───────────────────────────────────────────────────────────── */
+/* Busca dinâmica dos modelos disponíveis na chave (cache 10 min) */
 async function fetchAvailableModels(apiKey) {
-  // Cache de 10 minutos para não chamar sempre
-  const cached = localStorage.getItem('ps_models_cache');
+  const cached   = localStorage.getItem('ps_models_cache');
   const cachedAt = parseInt(localStorage.getItem('ps_models_cache_at') || '0');
-  if (cached && Date.now() - cachedAt < 10 * 60 * 1000) {
-    return JSON.parse(cached);
-  }
+  if (cached && Date.now() - cachedAt < 10 * 60 * 1000) return JSON.parse(cached);
 
   try {
     const res = await fetch(
@@ -81,194 +94,128 @@ async function fetchAvailableModels(apiKey) {
       .filter(m =>
         Array.isArray(m.supportedGenerationMethods) &&
         m.supportedGenerationMethods.includes('generateContent') &&
-        (m.name.includes('flash') || m.name.includes('pro') || m.name.includes('gemini'))
+        (m.name.includes('flash') || m.name.includes('pro'))
       )
       .map(m => m.name.replace('models/', ''))
-      // Prioriza flash (mais rápido e gratuito) sobre pro
       .sort((a, b) => {
-        const score = m => {
-          if (m.includes('flash-lite') || m.includes('flash-8b')) return 1;
-          if (m.includes('flash'))  return 3;
-          if (m.includes('pro'))    return 2;
-          return 0;
-        };
-        return score(b) - score(a);
+        // flash > pro, mais novo > mais antigo, -lite/-8b por último
+        const s = x =>
+          x.includes('2.5') ? 40 :
+          x.includes('2.0') ? 30 :
+          x.includes('1.5') ? 20 : 10;
+        const penalty = x => (x.includes('lite') || x.includes('8b')) ? -5 : 0;
+        const type    = x => x.includes('flash') ? 3 : x.includes('pro') ? 2 : 1;
+        return (s(b) + type(b) + penalty(b)) - (s(a) + type(a) + penalty(a));
       });
 
-    if (models.length > 0) {
-      localStorage.setItem('ps_models_cache', JSON.stringify(models));
+    if (models.length) {
+      localStorage.setItem('ps_models_cache',    JSON.stringify(models));
       localStorage.setItem('ps_models_cache_at', String(Date.now()));
-      console.log('[PrintScout] Modelos disponíveis:', models);
     }
-    return models.length > 0 ? models : null;
+    return models.length ? models : null;
   } catch (e) {
     console.warn('[PrintScout] Erro ao listar modelos:', e.message);
     return null;
   }
 }
 
-// Fallback caso a listagem falhe — nomes mais comuns de 2024-2026
 const FALLBACK_MODELS = [
   'gemini-2.5-flash',
-  'gemini-2.5-flash-preview-04-17',
-  'gemini-2.5-flash-preview-05-20',
+  'gemini-2.5-pro',
   'gemini-2.0-flash',
   'gemini-2.0-flash-lite',
-  'gemini-2.0-flash-exp',
   'gemini-1.5-flash',
-  'gemini-1.5-flash-latest',
   'gemini-1.5-flash-8b',
   'gemini-1.5-pro',
-  'gemini-1.5-pro-latest',
 ];
 
 async function getModelsToTry(apiKey) {
   const dynamic = await fetchAvailableModels(apiKey);
-  if (dynamic && dynamic.length > 0) return dynamic;
-  console.warn('[PrintScout] Listagem falhou, usando fallback');
-  return FALLBACK_MODELS;
+  return dynamic && dynamic.length ? dynamic : FALLBACK_MODELS;
 }
 
-// Tenta um modelo com até 3 retries em caso de 429
-async function tryModelWithRetry(model, prompt, maxTokens) {
+/* Tenta UM modelo — sem loop de retry para 429 (passa logo pro próximo) */
+async function tryModel(model, prompt, maxTokens) {
   const apiKey = getApiKey();
-  const retryDelays = [8000, 15000, 25000];
 
-  for (let attempt = 0; attempt <= retryDelays.length; attempt++) {
-    try {
-      const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: prompt }] }],
-            generationConfig: {
-              temperature: 0.7,
-              maxOutputTokens: maxTokens,
-              responseMimeType: 'application/json'
-            }
-          })
+  const res = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+    {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: {
+          temperature:      0.5,    // menos criativo = JSON mais limpo
+          maxOutputTokens:  maxTokens,
+          // ⚠️ SEM responseMimeType — incompatível com gemini-2.5-flash
         }
-      );
-
-      if (res.ok) {
-        const data = await res.json();
-        const raw  = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-        if (!raw) throw Object.assign(new Error('Resposta vazia da IA.'), { status: 'empty' });
-
-        const clean = raw
-          .replace(/^```(?:json)?\s*/i, '')
-          .replace(/\s*```\s*$/,        '')
-          .trim();
-
-        try {
-          return JSON.parse(clean);
-        } catch {
-          // Tenta extrair JSON mesmo que haja texto antes/depois
-          const match = clean.match(/\{[\s\S]*\}/);
-          if (match) return JSON.parse(match[0]);
-          throw Object.assign(new Error('JSON inválido na resposta.'), { status: 'parse' });
-        }
-      }
-
-      const errBody  = await res.json().catch(() => ({}));
-      const httpCode = res.status;
-      const msg      = errBody.error?.message || `HTTP ${httpCode}`;
-
-      if (httpCode === 400) throw Object.assign(new Error(msg), { status: 400 });
-      if (httpCode === 404) throw Object.assign(new Error(msg), { status: 404 });
-
-      if (httpCode === 429) {
-        if (attempt < retryDelays.length) {
-          const wait    = retryDelays[attempt];
-          const waitSec = Math.round(wait / 1000);
-          updateStatusLabel(`${model} — limite, aguardando ${waitSec}s…`, 'checking');
-          await sleep(wait);
-          continue;
-        }
-        throw Object.assign(new Error(msg), { status: 429, exhausted: true });
-      }
-
-      throw Object.assign(new Error(msg), { status: httpCode });
-
-    } catch (e) {
-      if (e.status !== 429) throw e;
-      if (attempt >= retryDelays.length) throw e;
+      })
     }
+  );
+
+  if (res.ok) {
+    const data = await res.json();
+    const raw  = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    return extractJSON(raw);   // extração robusta
   }
+
+  const errBody  = await res.json().catch(() => ({}));
+  const httpCode = res.status;
+  const msg      = errBody.error?.message || `HTTP ${httpCode}`;
+  throw Object.assign(new Error(msg), { status: httpCode });
 }
 
-// Chamada principal: descobre os modelos disponíveis, depois tenta cada um
-async function callGemini(prompt, maxTokens = 2048) {
+/* Chamada principal: tenta cada modelo uma vez, sem esperas longas */
+async function callGemini(prompt, maxTokens = 1500) {
   const apiKey = getApiKey();
   if (!apiKey) throw new Error('Configure sua chave Gemini gratuita em Configurações!');
 
-  updateStatusLabel('Detectando modelos disponíveis…', 'checking');
-
+  updateStatusLabel('Detectando modelos…', 'checking');
   const models = await getModelsToTry(apiKey);
 
-  // Se há modelo que funcionou antes, coloca ele na frente
+  // Modelo que funcionou antes vai na frente
   const saved = localStorage.getItem('ps_working_model');
-  const orderedModels = saved && models.includes(saved)
+  const ordered = saved && models.includes(saved)
     ? [saved, ...models.filter(m => m !== saved)]
     : models;
 
-  let lastErr    = null;
-  let triedCount = 0;
+  let lastErr = null;
 
-  for (const model of orderedModels) {
-    triedCount++;
+  for (const model of ordered) {
     try {
-      updateStatusLabel(`Conectando (${model})…`, 'checking');
-      const result = await tryModelWithRetry(model, prompt, maxTokens);
-
+      updateStatusLabel(`Consultando ${model}…`, 'checking');
+      const result = await tryModel(model, prompt, maxTokens);
       localStorage.setItem('ps_working_model', model);
-      // Invalida cache de modelos para refrescar na próxima sessão
       updateStatusLabel(`Gemini ✓ (${model})`, 'online');
       return result;
-
     } catch (e) {
       lastErr = e;
-
       if (e.status === 400) {
         updateStatusLabel('Chave inválida', 'offline');
         throw new Error('Chave API inválida. Verifique em Configurações (deve começar com "AIza").');
       }
-
-      if (e.status === 404) {
-        if (saved === model) localStorage.removeItem('ps_working_model');
-        console.warn(`[PrintScout] ${model} não disponível (404)`);
-        continue;
-      }
-
-      if (e.status === 429 && e.exhausted) {
-        console.warn(`[PrintScout] ${model} com cota esgotada`);
-        continue;
-      }
-
-      console.warn(`[PrintScout] ${model} erro: ${e.status} — ${e.message}`);
-      continue;
+      // 404 → modelo não existe, 429 → cota, outro → erro temporário
+      // Em todos os casos: tenta o próximo imediatamente
+      console.warn(`[PrintScout] ${model}: ${e.status || ''} ${e.message}`);
     }
   }
 
-  // Todos os modelos falharam
+  // Nenhum funcionou
   updateStatusLabel('Erro na API', 'offline');
-  // Limpa cache de modelos para forçar nova listagem na próxima tentativa
   localStorage.removeItem('ps_models_cache');
   localStorage.removeItem('ps_models_cache_at');
 
   if (lastErr?.status === 429) {
     throw new Error(
-      'Todos os modelos estão com cota esgotada no momento.\n' +
-      'Aguarde 5–10 minutos e tente novamente.\n' +
-      'Dica: a cota gratuita é de 15 req/min e 1.500 req/dia por modelo.'
+      'Cota esgotada em todos os modelos.\n' +
+      'Aguarde alguns minutos e tente novamente.\n' +
+      '(Limite gratuito: 15 req/min por modelo)'
     );
   }
-
   throw new Error(
-    `Nenhum modelo Gemini respondeu (${triedCount} tentado${triedCount > 1 ? 's' : ''}).\n` +
-    'Clique em "Testar Chave" em Configurações para diagnóstico.'
+    (lastErr?.message || 'Erro desconhecido') + '\n' +
+    'Acesse Configurações → Testar Chave para diagnóstico.'
   );
 }
 
@@ -284,17 +231,18 @@ function verificarApiKey() {
   const key = getApiKey();
   const dot = document.getElementById('status-dot');
   const lbl = document.getElementById('status-label');
+  if (!dot || !lbl) return;
   if (!key) {
     dot.className   = 'status-dot offline';
     lbl.textContent = 'Gemini não configurado';
   } else {
     dot.className   = 'status-dot online';
     const m = localStorage.getItem('ps_working_model') || 'gemini (auto)';
-    lbl.textContent = `Gemini configurado ✓ (${m})`;
+    lbl.textContent = `Gemini ✓ (${m})`;
   }
 }
 
-window.salvarApiKey = function() {
+window.salvarApiKey = function () {
   const key = document.getElementById('cfg-api-key').value.trim();
   if (!key || !key.startsWith('AIza')) {
     showToast('Chave inválida. Deve começar com "AIza"', 'error');
@@ -302,87 +250,74 @@ window.salvarApiKey = function() {
   }
   localStorage.setItem('ps_gemini_key', key);
   localStorage.removeItem('ps_working_model');
-  // Limpa cache de modelos para redescobrir com a nova chave
   localStorage.removeItem('ps_models_cache');
   localStorage.removeItem('ps_models_cache_at');
   document.getElementById('cfg-api-key').value = '';
   const st = document.getElementById('cfg-key-status');
-  st.textContent = '✅ Chave salva! Clique em "Testar Chave" para detectar os modelos disponíveis.';
+  st.textContent = '✅ Chave salva! Clique em "Testar Chave" para detectar os modelos.';
   st.className = 'cfg-status ok';
   st.classList.remove('hidden');
   verificarApiKey();
   showToast('Chave Gemini salva ✓', 'success');
 };
 
-window.testarChaveGemini = async function() {
+window.testarChaveGemini = async function () {
   const key = getApiKey();
   if (!key) { showToast('Nenhuma chave configurada', 'error'); return; }
 
   const btn = document.getElementById('btn-testar-chave');
-  if (btn) { btn.disabled = true; btn.textContent = '⏳ Detectando modelos…'; }
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Detectando…'; }
 
   const st = document.getElementById('cfg-key-status');
   st.innerHTML = '⏳ Buscando modelos disponíveis na sua chave…';
   st.className = 'cfg-status ok';
   st.classList.remove('hidden');
 
-  // Limpa cache para forçar nova listagem
   localStorage.removeItem('ps_models_cache');
   localStorage.removeItem('ps_models_cache_at');
 
   try {
-    // 1. Lista modelos disponíveis na chave
     const listRes = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models?key=${key}&pageSize=100`
     );
-
     if (!listRes.ok) {
       const err = await listRes.json().catch(() => ({}));
-      if (listRes.status === 400) {
-        st.innerHTML = '🔑 Chave inválida (erro 400). Verifique se copiou corretamente.';
-        st.className = 'cfg-status err';
-        if (btn) { btn.disabled = false; btn.textContent = '🔍 Testar Chave'; }
-        return;
-      }
-      st.innerHTML = `⚠️ Erro ao listar modelos: HTTP ${listRes.status}`;
+      st.innerHTML = listRes.status === 400
+        ? '🔑 Chave inválida (erro 400). Verifique se copiou corretamente.'
+        : `⚠️ Erro ao listar modelos: HTTP ${listRes.status} — ${err.error?.message || ''}`;
       st.className = 'cfg-status err';
       if (btn) { btn.disabled = false; btn.textContent = '🔍 Testar Chave'; }
       return;
     }
 
-    const listData = await listRes.json();
+    const listData  = await listRes.json();
     const allModels = (listData.models || [])
-      .filter(m =>
-        Array.isArray(m.supportedGenerationMethods) &&
-        m.supportedGenerationMethods.includes('generateContent')
-      );
+      .filter(m => Array.isArray(m.supportedGenerationMethods) &&
+                   m.supportedGenerationMethods.includes('generateContent') &&
+                   (m.name.includes('flash') || m.name.includes('pro')))
+      .map(m => m.name.replace('models/', ''))
+      .slice(0, 8);
 
-    if (allModels.length === 0) {
-      st.innerHTML = '❌ Nenhum modelo com suporte a generateContent encontrado nesta chave.<br>Tente criar uma nova chave em <a href="https://aistudio.google.com/apikey" target="_blank">aistudio.google.com/apikey</a>';
+    if (!allModels.length) {
+      st.innerHTML = '❌ Nenhum modelo compatível encontrado nesta chave.';
       st.className = 'cfg-status err';
       if (btn) { btn.disabled = false; btn.textContent = '🔍 Testar Chave'; }
       return;
     }
 
-    // 2. Testa cada modelo (máximo 5 para não demorar demais)
-    const toTest = allModels
-      .map(m => m.name.replace('models/', ''))
-      .filter(m => m.includes('flash') || m.includes('pro'))
-      .slice(0, 6);
+    const lines   = [`📋 Modelos encontrados: <strong>${allModels.length}</strong><br>`];
+    let   firstOk = null;
 
-    const lines  = [`📋 Modelos encontrados para generateContent: <strong>${toTest.length}</strong><br>`];
-    let firstOk  = null;
-
-    for (const model of toTest) {
+    for (const model of allModels) {
       try {
         const r = await fetch(
           `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`,
           {
-            method: 'POST',
+            method:  'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              contents: [{ parts: [{ text: 'Responda apenas: {"ok":true}' }] }],
-              generationConfig: { maxOutputTokens: 20, responseMimeType: 'application/json' }
+              contents: [{ parts: [{ text: 'Responda APENAS o JSON: {"ok":true}' }] }],
+              generationConfig: { maxOutputTokens: 30, temperature: 0 }
             })
           }
         );
@@ -391,35 +326,25 @@ window.testarChaveGemini = async function() {
           if (!firstOk) firstOk = model;
         } else {
           const s = r.status;
-          if (s === 429) {
-            lines.push(`⏳ ${model} — limite ativo agora (cota disponível)`);
-            if (!firstOk) firstOk = model;
-          } else if (s === 404) {
-            lines.push(`⚠️ ${model} — listado mas não acessível agora`);
-          } else {
-            lines.push(`❌ ${model} — erro ${s}`);
-          }
+          lines.push(s === 429
+            ? `⏳ ${model} — cota ativa (disponível após espera)`
+            : `⚠️ ${model} — ${s}`);
+          if (s === 429 && !firstOk) firstOk = model;
         }
-      } catch {
-        lines.push(`❌ ${model} — falha de rede`);
-      }
+      } catch { lines.push(`❌ ${model} — falha de rede`); }
     }
 
     if (firstOk) {
       localStorage.setItem('ps_working_model', firstOk);
-      // Salva lista no cache
-      const cacheList = toTest.filter(m => !lines.find(l => l.includes(m) && l.includes('❌ ' + m + ' — erro')));
-      localStorage.setItem('ps_models_cache', JSON.stringify(cacheList));
+      localStorage.setItem('ps_models_cache',    JSON.stringify(allModels));
       localStorage.setItem('ps_models_cache_at', String(Date.now()));
-      lines.push(`<br><strong style="color:var(--green)">→ Modelo padrão definido: ${firstOk}</strong>`);
-      lines.push(`<strong style="color:var(--green)">✓ Pronto para usar!</strong>`);
+      lines.push(`<br><strong style="color:var(--green)">→ Modelo padrão: ${firstOk} ✓ Pronto para usar!</strong>`);
     } else {
-      lines.push('<br><strong style="color:var(--red)">→ Nenhum modelo respondeu. Aguarde alguns minutos ou crie uma nova chave.</strong>');
+      lines.push('<br><strong style="color:var(--red)">→ Nenhum modelo respondeu agora. Aguarde alguns minutos.</strong>');
     }
 
     st.innerHTML = lines.join('<br>');
     st.className = firstOk ? 'cfg-status ok' : 'cfg-status err';
-
   } catch (e) {
     st.innerHTML = `❌ Erro de rede: ${e.message}`;
     st.className = 'cfg-status err';
@@ -430,7 +355,7 @@ window.testarChaveGemini = async function() {
 };
 
 // ── TABS ──────────────────────────────────────────────────────
-window.switchTab = function(tab) {
+window.switchTab = function (tab) {
   document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
   document.querySelectorAll('.nav-item, .bnav-item').forEach(el => el.classList.remove('active'));
   document.getElementById('tab-' + tab).classList.add('active');
@@ -448,7 +373,6 @@ function setupEventListeners() {
     card.classList.add('selected');
     nichoSelecionado = card.dataset.niche;
   });
-
   document.getElementById('plat-chips')?.addEventListener('click', e => {
     const chip = e.target.closest('.chip');
     if (!chip) return;
@@ -456,7 +380,6 @@ function setupEventListeners() {
     chip.classList.add('active');
     plataformaSelecionada = chip.dataset.plat;
   });
-
   document.getElementById('vol-chips')?.addEventListener('click', e => {
     const chip = e.target.closest('.chip');
     if (!chip) return;
@@ -464,14 +387,12 @@ function setupEventListeners() {
     chip.classList.add('active');
     volumeMinimo = parseInt(chip.dataset.vol) || 0;
   });
-
-  document.getElementById('analise-modal')?.addEventListener('click', function(e) {
+  document.getElementById('analise-modal')?.addEventListener('click', function (e) {
     if (e.target === this) fecharModal('analise-modal');
   });
-  document.getElementById('produto-modal')?.addEventListener('click', function(e) {
+  document.getElementById('produto-modal')?.addEventListener('click', function (e) {
     if (e.target === this) fecharModal('produto-modal');
   });
-
   document.getElementById('menu-btn')?.addEventListener('click', () => {
     document.getElementById('sidebar').classList.toggle('open');
   });
@@ -481,7 +402,7 @@ function setupEventListeners() {
 }
 
 // ── BUSCAR NICHO ──────────────────────────────────────────────
-window.buscarNicho = async function() {
+window.buscarNicho = async function () {
   if (!nichoSelecionado) {
     showToast('Selecione um nicho antes de buscar!', 'error');
     document.getElementById('niche-grid').style.animation = 'shake .4s ease';
@@ -496,68 +417,45 @@ window.buscarNicho = async function() {
 
   setBuscarLoading(true);
 
-  const hoje = new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' });
+  const hoje = new Date().toLocaleDateString('pt-BR',
+    { day: '2-digit', month: 'long', year: 'numeric' });
 
-  const prompt = `Você é um especialista em e-commerce brasileiro e impressão 3D FDM.
+  // ── Prompt simplificado = resposta mais rápida e JSON mais limpo ──
+  const prompt = `Você é especialista em e-commerce brasileiro e impressão 3D FDM.
 
-Data de hoje: ${hoje}
-Nicho pesquisado: ${nichoSelecionado}
-Plataforma(s): ${plataformaSelecionada}
-Volume mínimo desejado: ${volumeMinimo > 0 ? volumeMinimo + ' vendas/dia' : 'sem restrição'}
-${foco ? 'Foco específico: ' + foco : ''}
+Nicho: ${nichoSelecionado}
+Plataforma: ${plataformaSelecionada}
+${volumeMinimo > 0 ? 'Volume mínimo: ' + volumeMinimo + ' vendas/dia' : ''}
+${foco ? 'Foco: ' + foco : ''}
+Custos: filamento R$${custoFil}/kg, energia R$${custoEnerg}/h, mão de obra R$${custoMao}/h
 
-Custos do produtor:
-- Filamento: R$ ${custoFil}/kg
-- Energia: R$ ${custoEnerg}/hora
-- Mão de obra: R$ ${custoMao}/hora
+Liste os 8 produtos mais vendidos deste nicho que possam ser fabricados com impressora 3D FDM.
 
-Identifique os 12 produtos mais vendidos deste nicho no e-commerce brasileiro, priorizando produtos que POSSAM ser fabricados com impressora 3D FDM doméstica.
-
-Para cada produto, estime métricas realistas de mercado. Ordene do maior para o menor volume de vendas.
-
-Retorne SOMENTE JSON válido neste formato exato:
-{
-  "nicho": "${nichoSelecionado}",
-  "plataforma": "${plataformaSelecionada}",
-  "data_referencia": "${hoje}",
-  "produtos": [
-    {
-      "nome": "nome comercial do produto",
-      "descricao": "descrição em 1 linha do que é o produto",
-      "preco_min": 15.00,
-      "preco_max": 45.00,
-      "vendas_dia_estimadas": 750,
-      "concorrentes_estimados": 80,
-      "avaliacao_media": 4.6,
-      "printabilidade": 8,
-      "oportunidade": 7,
-      "saturacao": 5,
-      "veredicto": "PRODUZIR",
-      "material_sugerido": "PLA",
-      "motivo": "Uma frase explicando por que vale ou não a pena produzir",
-      "diferencial_possivel": "Como se diferenciar com impressão 3D"
-    }
-  ]
-}
+Responda SOMENTE com JSON puro, sem texto antes ou depois, sem markdown, sem explicações:
+{"nicho":"${nichoSelecionado}","plataforma":"${plataformaSelecionada}","data_referencia":"${hoje}","produtos":[{"nome":"nome do produto","descricao":"descrição curta","preco_min":15.00,"preco_max":45.00,"vendas_dia_estimadas":500,"concorrentes_estimados":60,"avaliacao_media":4.5,"printabilidade":8,"oportunidade":7,"saturacao":4,"veredicto":"PRODUZIR","material_sugerido":"PLA","motivo":"motivo em uma frase","diferencial_possivel":"como se diferenciar"}]}
 
 Regras:
-- printabilidade 0-10: capacidade de produzir em FDM doméstico (10 = trivial)
-- oportunidade 0-10: potencial de lucro e mercado (10 = excelente)
-- saturacao 0-10: saturação de mercado (10 = extremamente saturado, evitar)
-- veredicto: "PRODUZIR" se oportunidade >= 7 e printabilidade >= 6, "AVALIAR" se intermediário, "EVITAR" se saturado ou muito difícil
-- vendas_dia_estimadas: estimativa realista para um produto de destaque na plataforma
-- Inclua produtos com alta e baixa printabilidade para dar visão completa do nicho`;
+- printabilidade/oportunidade/saturacao: 0 a 10
+- veredicto: PRODUZIR (oportunidade>=7 e print>=6), AVALIAR (intermediário), EVITAR (saturado)
+- Retorne exatamente 8 produtos
+- JSON válido sem caracteres especiais problemáticos`;
 
   try {
-    const resultado = await callGemini(prompt, 3000);
+    const resultado = await callGemini(prompt, 1800);
 
     if (!resultado.produtos || !Array.isArray(resultado.produtos)) {
-      throw new Error('Formato inesperado da resposta. Tente novamente.');
+      throw new Error('A IA não retornou a lista de produtos. Tente novamente.');
     }
 
     let produtos = resultado.produtos;
     if (volumeMinimo > 0) {
-      produtos = produtos.filter(p => p.vendas_dia_estimadas >= volumeMinimo);
+      produtos = produtos.filter(p => (p.vendas_dia_estimadas || 0) >= volumeMinimo);
+    }
+
+    if (!produtos.length) {
+      showToast('Nenhum produto passou o filtro de volume. Reduza o mínimo.', 'error');
+      setBuscarLoading(false);
+      return;
     }
 
     renderDiscovery(resultado, produtos);
@@ -589,15 +487,12 @@ function renderDiscovery(meta, produtos) {
   title.textContent = `${meta.nicho} · ${meta.plataforma} · ${meta.data_referencia}`;
   section.classList.remove('hidden');
 
-  if (!produtos.length) {
-    grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1"><div class="empty-icon">◎</div><p>Nenhum produto encontrou o filtro de volume mínimo.</p><button class="btn-ghost" onclick="document.getElementById('vol-chips').querySelector('[data-vol=\\'0\\']').click();buscarNicho()">Remover filtro de volume</button></div>`;
-    return;
-  }
-
   grid.innerHTML = produtos.map((p, i) => {
     const scoreGeral = ((p.printabilidade + p.oportunidade + (10 - p.saturacao)) / 3).toFixed(1);
     const verdClass  = p.veredicto === 'PRODUZIR' ? 'PRODUZIR' : p.veredicto === 'AVALIAR' ? 'AVALIAR' : 'EVITAR';
-    const vendasFmt  = p.vendas_dia_estimadas >= 1000 ? (p.vendas_dia_estimadas / 1000).toFixed(1) + 'k' : p.vendas_dia_estimadas;
+    const vendasFmt  = p.vendas_dia_estimadas >= 1000
+      ? (p.vendas_dia_estimadas / 1000).toFixed(1) + 'k'
+      : p.vendas_dia_estimadas;
     return `
     <div class="discovery-card ${verdClass}" onclick="abrirAnalise(${i})" data-index="${i}">
       <div class="dc-header">
@@ -628,7 +523,7 @@ function renderDiscovery(meta, produtos) {
 }
 
 // ── ANÁLISE PROFUNDA ──────────────────────────────────────────
-window.abrirAnalise = async function(index) {
+window.abrirAnalise = async function (index) {
   const produto = window._discoveryProdutos?.[index];
   const meta    = window._discoveryMeta || {};
   if (!produto) return;
@@ -643,65 +538,19 @@ window.abrirAnalise = async function(index) {
   const custoMao   = localStorage.getItem('ps_custo_mao')     || '25';
   const margemMin  = localStorage.getItem('ps_margem_min')    || '40';
 
-  const prompt = `Você é um especialista em impressão 3D FDM e mercado e-commerce brasileiro.
+  const prompt = `Especialista em impressão 3D FDM e e-commerce brasileiro.
 
-Faça uma ANÁLISE PROFUNDA deste produto para produção 3D:
+Produto: ${produto.nome}
+Nicho: ${meta.nicho || ''} | Plataforma: ${meta.plataforma || 'Shopee'}
+Preço mercado: R$${produto.preco_min}–R$${produto.preco_max}
+Vendas/dia: ${produto.vendas_dia_estimadas} | Concorrentes: ${produto.concorrentes_estimados}
+Custos: filamento R$${custoFil}/kg, energia R$${custoEnerg}/h, mão obra R$${custoMao}/h, margem mínima ${margemMin}%
 
-PRODUTO: ${produto.nome}
-DESCRIÇÃO: ${produto.descricao}
-NICHO: ${meta.nicho || 'não especificado'}
-PLATAFORMA: ${meta.plataforma || 'Shopee'}
-PREÇO DE MERCADO: R$ ${produto.preco_min} – R$ ${produto.preco_max}
-VENDAS ESTIMADAS/DIA: ${produto.vendas_dia_estimadas}
-CONCORRENTES ESTIMADOS: ${produto.concorrentes_estimados}
-AVALIAÇÃO MÉDIA: ${produto.avaliacao_media}
-PRINTABILIDADE PRÉVIA: ${produto.printabilidade}/10
-
-CUSTOS DO PRODUTOR:
-- Filamento: R$ ${custoFil}/kg
-- Energia: R$ ${custoEnerg}/hora
-- Mão de obra: R$ ${custoMao}/hora
-- Margem mínima aceitável: ${margemMin}%
-
-Retorne SOMENTE JSON válido:
-{
-  "printabilidade": 8,
-  "oportunidade": 7,
-  "saturacao": 5,
-  "veredicto": "PRODUZIR",
-  "material_principal": "PLA",
-  "material_alternativo": "PETG",
-  "dificuldade": "Fácil",
-  "nivel_concorrencia": "Média",
-  "tempo_impressao": "2h 30m",
-  "custo_material_min": 3.50,
-  "custo_material_max": 6.00,
-  "custo_total_min": 5.00,
-  "custo_total_max": 9.00,
-  "preco_sugerido_min": 25.00,
-  "preco_sugerido_max": 45.00,
-  "margem_estimada_min": 60,
-  "margem_estimada_max": 80,
-  "config_impressao": {
-    "camada": "0.2mm",
-    "infill": "20%",
-    "suporte": "Não",
-    "temperatura_bico": "210C",
-    "temperatura_mesa": "60C",
-    "velocidade": "60mm/s",
-    "tempo_total_horas": 2.5
-  },
-  "pontos_favoraveis": ["ponto1", "ponto2", "ponto3"],
-  "riscos": ["risco1", "risco2"],
-  "analise_resumo": "Análise em 3-4 frases",
-  "keywords_shopee": ["kw1", "kw2", "kw3", "kw4", "kw5"],
-  "diferenciais": ["diferencial1", "diferencial2"],
-  "ideias_variacao": ["variacao1", "variacao2"],
-  "alertas": []
-}`;
+Responda SOMENTE com JSON puro, sem texto antes ou depois:
+{"printabilidade":8,"oportunidade":7,"saturacao":5,"veredicto":"PRODUZIR","material_principal":"PLA","material_alternativo":"PETG","dificuldade":"Fácil","nivel_concorrencia":"Média","tempo_impressao":"2h 30m","custo_material_min":3.50,"custo_material_max":6.00,"custo_total_min":5.00,"custo_total_max":9.00,"preco_sugerido_min":25.00,"preco_sugerido_max":45.00,"margem_estimada_min":60,"margem_estimada_max":80,"config_impressao":{"camada":"0.2mm","infill":"20%","suporte":"Não","temperatura_bico":"210C","temperatura_mesa":"60C","velocidade":"60mm/s"},"pontos_favoraveis":["ponto1","ponto2","ponto3"],"riscos":["risco1","risco2"],"analise_resumo":"análise em 3 frases","keywords_shopee":["kw1","kw2","kw3","kw4","kw5"],"diferenciais":["diferencial1","diferencial2"],"ideias_variacao":["variacao1","variacao2"],"alertas":[]}`;
 
   try {
-    const resultado = await callGemini(prompt, 2000);
+    const resultado = await callGemini(prompt, 1500);
     resultado._produto = { ...produto, nicho: meta.nicho, plataforma: meta.plataforma };
     renderAnalise(resultado);
   } catch (e) {
@@ -735,9 +584,9 @@ function renderAnalise(r) {
       ${renderCircle('circle-g', parseFloat(scoreGeral), 'Score Geral', 'var(--purple)')}
     </div>
     <div class="info-grid">
-      <div class="info-card"><div class="info-icon">🧵</div><div class="info-label">Material</div><div class="info-value">${r.material_principal}</div><div class="info-sub">${r.material_alternativo || 'sem alternativa'}</div></div>
+      <div class="info-card"><div class="info-icon">🧵</div><div class="info-label">Material</div><div class="info-value">${r.material_principal}</div><div class="info-sub">${r.material_alternativo||'—'}</div></div>
       <div class="info-card"><div class="info-icon">⏱</div><div class="info-label">Tempo Print</div><div class="info-value">${r.tempo_impressao}</div><div class="info-sub">por unidade</div></div>
-      <div class="info-card"><div class="info-icon">💰</div><div class="info-label">Custo Total</div><div class="info-value">R$ ${(r.custo_total_min||0).toFixed(2)}–${(r.custo_total_max||0).toFixed(2)}</div><div class="info-sub">energia + material + mão de obra</div></div>
+      <div class="info-card"><div class="info-icon">💰</div><div class="info-label">Custo Total</div><div class="info-value">R$ ${(r.custo_total_min||0).toFixed(2)}–${(r.custo_total_max||0).toFixed(2)}</div><div class="info-sub">material + energia + M.O.</div></div>
       <div class="info-card info-highlight"><div class="info-icon">📈</div><div class="info-label">Margem Est.</div><div class="info-value">${r.margem_estimada_min||0}%–${r.margem_estimada_max||0}%</div><div class="info-sub">preço: R$ ${(r.preco_sugerido_min||0).toFixed(2)}–${(r.preco_sugerido_max||0).toFixed(2)}</div></div>
     </div>
     <div class="tags-row">
@@ -748,37 +597,29 @@ function renderAnalise(r) {
     <div class="print-config-box">
       <div class="print-config-title">⚙️ Configuração de Impressão Sugerida</div>
       <div class="print-config-grid">
-        ${Object.entries(r.config_impressao || {}).filter(([k]) => k !== 'tempo_total_horas').map(([k,v]) => `<span class="cfg-chip"><strong>${k.replace(/_/g,' ')}:</strong> ${v}</span>`).join('')}
+        ${Object.entries(r.config_impressao||{}).map(([k,v])=>`<span class="cfg-chip"><strong>${k.replace(/_/g,' ')}:</strong> ${v}</span>`).join('')}
       </div>
     </div>
     <div class="pros-cons-row">
       <div class="pros-box">
         <div class="pros-title">✅ Pontos Favoráveis</div>
-        <ul>${(r.pontos_favoraveis||[]).map(pt => `<li>${pt}</li>`).join('')}</ul>
+        <ul>${(r.pontos_favoraveis||[]).map(pt=>`<li>${pt}</li>`).join('')}</ul>
       </div>
       <div class="cons-box">
         <div class="cons-title">⚠️ Riscos</div>
-        <ul>${(r.riscos||[]).map(ri => `<li>${ri}</li>`).join('')}</ul>
+        <ul>${(r.riscos||[]).map(ri=>`<li>${ri}</li>`).join('')}</ul>
       </div>
     </div>
     <div class="analise-box">
       <div class="analise-title">🤖 Análise da IA</div>
       <p>${r.analise_resumo}</p>
     </div>
-    ${r.ideias_variacao?.length ? `
-    <div class="analise-box">
-      <div class="analise-title">💡 Ideias de Variação</div>
-      <ul style="margin-top:8px;padding-left:16px;color:var(--text2);font-size:13px;line-height:1.8">${r.ideias_variacao.map(d=>`<li>${d}</li>`).join('')}</ul>
-    </div>` : ''}
+    ${r.ideias_variacao?.length ? `<div class="analise-box"><div class="analise-title">💡 Ideias de Variação</div><ul style="margin-top:8px;padding-left:16px;color:var(--text2);font-size:13px;line-height:1.8">${r.ideias_variacao.map(d=>`<li>${d}</li>`).join('')}</ul></div>` : ''}
     <div class="analise-box">
       <div class="analise-title">🚀 Como Se Diferenciar</div>
       <ul style="margin-top:8px;padding-left:16px;color:var(--text2);font-size:13px;line-height:1.8">${(r.diferenciais||[]).map(d=>`<li>${d}</li>`).join('')}</ul>
     </div>
-    ${r.alertas?.length ? `
-    <div class="analise-box" style="border-left:3px solid var(--yellow)">
-      <div class="analise-title" style="color:var(--yellow)">⚠️ Alertas</div>
-      <ul style="margin-top:8px;padding-left:16px;color:var(--text2);font-size:13px;line-height:1.8">${r.alertas.map(a=>`<li>${a}</li>`).join('')}</ul>
-    </div>` : ''}
+    ${r.alertas?.length ? `<div class="analise-box" style="border-left:3px solid var(--yellow)"><div class="analise-title" style="color:var(--yellow)">⚠️ Alertas</div><ul style="margin-top:8px;padding-left:16px;color:var(--text2);font-size:13px;line-height:1.8">${r.alertas.map(a=>`<li>${a}</li>`).join('')}</ul></div>` : ''}
     <div class="keywords-box">
       <div class="keywords-title">🔍 Palavras-chave para Shopee / TikTok</div>
       <div class="keywords-list">${(r.keywords_shopee||[]).map(k=>`<span class="kw-tag">${k}</span>`).join('')}</div>
@@ -828,10 +669,10 @@ function animarCirculos(r) {
 }
 
 // ── SALVAR ANÁLISE ────────────────────────────────────────────
-window.salvarAnalise = async function() {
+window.salvarAnalise = async function () {
   const r = window._currentAnalise;
   if (!r || !currentUser) return;
-  const p = r._produto || {};
+  const p   = r._produto || {};
   const btn = document.querySelector('#analise-resultado .btn-save');
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Salvando...'; }
 
@@ -863,7 +704,7 @@ window.salvarAnalise = async function() {
     };
     await psDB.collection('produtos').add(payload);
     if (btn) btn.textContent = '✅ Salvo!';
-    showToast('Produto salvo no Firebase! ✓', 'success');
+    showToast('Produto salvo! ✓', 'success');
     window._currentAnalise = null;
   } catch (e) {
     showToast('Erro ao salvar: ' + e.message, 'error');
@@ -882,7 +723,8 @@ function iniciarEscutadores() {
     }, err => {
       console.warn('Firestore:', err.message);
       psDB.collection('produtos').orderBy('salvoEm', 'desc').onSnapshot(snap => {
-        produtosSalvos = snap.docs.map(d => ({ _id: d.id, ...d.data() })).filter(p => p.usuario === currentUser.email);
+        produtosSalvos = snap.docs.map(d => ({ _id: d.id, ...d.data() }))
+          .filter(p => p.usuario === currentUser.email);
         atualizarDashboard(); renderProdutos();
       });
     });
@@ -898,15 +740,19 @@ function atualizarDashboard() {
   document.getElementById('kpi-total').textContent    = total || '0';
   document.getElementById('kpi-produzir').textContent = produzir || '0';
 
-  const avgVendas = total > 0 ? Math.round(produtosSalvos.reduce((s,p)=>s+(p.vendasDia||0),0)/total) : '—';
+  const avgVendas = total > 0
+    ? Math.round(produtosSalvos.reduce((s, p) => s + (p.vendasDia || 0), 0) / total)
+    : '—';
   document.getElementById('kpi-vendas').textContent = avgVendas;
 
-  const avgScore = total > 0 ? (produtosSalvos.reduce((s,p)=>s+Number(p.scoreTotal||0),0)/total).toFixed(1) : '—';
+  const avgScore = total > 0
+    ? (produtosSalvos.reduce((s, p) => s + Number(p.scoreTotal || 0), 0) / total).toFixed(1)
+    : '—';
   document.getElementById('kpi-score').textContent = avgScore;
 
-  ['produzir','avaliar','evitar'].forEach(k => {
+  ['produzir', 'avaliar', 'evitar'].forEach(k => {
     const count = { produzir, avaliar, evitar }[k];
-    const pct   = total > 0 ? Math.round((count/total)*100) : 0;
+    const pct   = total > 0 ? Math.round((count / total) * 100) : 0;
     const bar   = document.getElementById('bar-' + k);
     const cnt   = document.getElementById('count-' + k);
     if (bar) bar.style.width = pct + '%';
@@ -914,10 +760,10 @@ function atualizarDashboard() {
   });
 
   const topDiv = document.getElementById('top-oportunidades');
-  const top5   = [...produtosSalvos].sort((a,b)=>b.scoreTotal-a.scoreTotal).slice(0,5);
+  const top5   = [...produtosSalvos].sort((a, b) => b.scoreTotal - a.scoreTotal).slice(0, 5);
   topDiv.innerHTML = !top5.length
     ? `<div class="empty-state"><div class="empty-icon">◎</div><p>Nenhum produto salvo ainda.</p><button class="btn-ghost" onclick="switchTab('buscar')">Buscar primeiro nicho →</button></div>`
-    : top5.map((p,i) => `
+    : top5.map((p, i) => `
       <div class="top-item" onclick="abrirModal('${p._id}')">
         <div class="top-rank ${i===0?'r1':i===1?'r2':i===2?'r3':''}">#${i+1}</div>
         <div class="top-info"><div class="top-nome">${p.nome}</div><div class="top-meta">${p.plataforma||''} · ${p.vendasDia||0} vendas/dia</div></div>
@@ -925,7 +771,7 @@ function atualizarDashboard() {
       </div>`).join('');
 
   const recentesDiv = document.getElementById('recentes-list');
-  const recentes    = produtosSalvos.slice(0,5);
+  const recentes    = produtosSalvos.slice(0, 5);
   recentesDiv.innerHTML = !recentes.length
     ? '<div class="empty-mini">Nenhum produto ainda</div>'
     : recentes.map(p => `
@@ -936,16 +782,15 @@ function atualizarDashboard() {
 }
 
 // ── RENDER PRODUTOS ───────────────────────────────────────────
-window.aplicarFiltros = function() { renderProdutos(); };
-window.limparFiltros  = function() {
-  ['filter-veredicto','filter-plataforma','filter-vendas','filter-score','filter-busca'].forEach(id=>{
-    const el = document.getElementById(id); if (el) el.value='';
-  });
+window.aplicarFiltros = function () { renderProdutos(); };
+window.limparFiltros  = function () {
+  ['filter-veredicto','filter-plataforma','filter-vendas','filter-score','filter-busca']
+    .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
   renderProdutos();
 };
-window.sortProdutos = function(key) {
+window.sortProdutos = function (key) {
   sortKey = key;
-  document.querySelectorAll('.sort-btn').forEach(b=>b.classList.remove('active'));
+  document.querySelectorAll('.sort-btn').forEach(b => b.classList.remove('active'));
   document.querySelector(`[data-sort="${key}"]`)?.classList.add('active');
   renderProdutos();
 };
@@ -956,18 +801,18 @@ function renderProdutos() {
   const fPlat  = document.getElementById('filter-plataforma')?.value || '';
   const fVend  = Number(document.getElementById('filter-vendas')?.value) || 0;
   const fScore = Number(document.getElementById('filter-score')?.value) || 0;
-  const fBusca = (document.getElementById('filter-busca')?.value||'').toLowerCase();
+  const fBusca = (document.getElementById('filter-busca')?.value || '').toLowerCase();
 
-  if (fVerd)  dados = dados.filter(p=>p.veredicto===fVerd);
-  if (fPlat)  dados = dados.filter(p=>(p.plataforma||'').includes(fPlat));
-  if (fVend)  dados = dados.filter(p=>(p.vendasDia||0)>=fVend);
-  if (fScore) dados = dados.filter(p=>Number(p.scoreTotal||0)>=fScore);
-  if (fBusca) dados = dados.filter(p=>(p.nome||'').toLowerCase().includes(fBusca));
+  if (fVerd)  dados = dados.filter(p => p.veredicto === fVerd);
+  if (fPlat)  dados = dados.filter(p => (p.plataforma || '').includes(fPlat));
+  if (fVend)  dados = dados.filter(p => (p.vendasDia || 0) >= fVend);
+  if (fScore) dados = dados.filter(p => Number(p.scoreTotal || 0) >= fScore);
+  if (fBusca) dados = dados.filter(p => (p.nome || '').toLowerCase().includes(fBusca));
 
-  dados.sort((a,b)=>{
-    if (sortKey==='score')  return Number(b.scoreTotal||0)-Number(a.scoreTotal||0);
-    if (sortKey==='vendas') return (b.vendasDia||0)-(a.vendasDia||0);
-    if (sortKey==='margem') return (b.margemEstimada||0)-(a.margemEstimada||0);
+  dados.sort((a, b) => {
+    if (sortKey === 'score')  return Number(b.scoreTotal||0) - Number(a.scoreTotal||0);
+    if (sortKey === 'vendas') return (b.vendasDia||0) - (a.vendasDia||0);
+    if (sortKey === 'margem') return (b.margemEstimada||0) - (a.margemEstimada||0);
     return (b.salvoEm||'').localeCompare(a.salvoEm||'');
   });
 
@@ -1003,14 +848,14 @@ function renderProdutos() {
   }).join('');
 }
 
-// ── MODAL ─────────────────────────────────────────────────────
-window.abrirModal = function(id) {
-  const p = produtosSalvos.find(x=>x._id===id);
+// ── MODAL PRODUTO ─────────────────────────────────────────────
+window.abrirModal = function (id) {
+  const p = produtosSalvos.find(x => x._id === id);
   if (!p) return;
   document.getElementById('modal-content').innerHTML = `
     <button class="modal-close" onclick="fecharModal('produto-modal')">✕</button>
     <div class="modal-title">${p.nome}</div>
-    <div class="modal-sub">${p.plataforma||''} · ${p.nicho||p.categoria||''} · Salvo em ${formatDate(p.salvoEm)}</div>
+    <div class="modal-sub">${p.plataforma||''} · ${p.nicho||p.categoria||''} · ${formatDate(p.salvoEm)}</div>
     <span class="verdict-badge ${p.veredicto}" style="display:inline-block;margin-bottom:20px">${p.veredicto||'PENDENTE'}</span>
     <div class="modal-section"><div class="modal-section-title">Scores</div>
       <div class="modal-grid">
@@ -1026,63 +871,74 @@ window.abrirModal = function(id) {
       </div></div>
     <div class="modal-section"><div class="modal-section-title">Mercado</div>
       <div class="modal-grid">
-        <div class="modal-stat"><div class="modal-stat-val">R$ ${p.precoMin||0}–${p.precoMax||0}</div><div class="modal-stat-lbl">Preço Mercado</div></div>
+        <div class="modal-stat"><div class="modal-stat-val">R$${p.precoMin||0}–${p.precoMax||0}</div><div class="modal-stat-lbl">Preço Mercado</div></div>
         <div class="modal-stat"><div class="modal-stat-val">${p.vendasDia||0}/dia</div><div class="modal-stat-lbl">Vendas Est.</div></div>
         <div class="modal-stat"><div class="modal-stat-val">${p.margemMax||p.margemEstimada||0}%</div><div class="modal-stat-lbl">Margem Máx.</div></div>
       </div></div>
-    ${p.analise?`<div class="modal-section"><div class="modal-section-title">Análise da IA</div><p style="font-size:13px;color:var(--text2);line-height:1.7">${p.analise}</p></div>`:''}
-    ${p.keywords?.length?`<div class="modal-section"><div class="modal-section-title">Keywords</div><div class="keywords-list">${p.keywords.map(k=>`<span class="kw-tag">${k}</span>`).join('')}</div></div>`:''}`;
+    ${p.analise ? `<div class="modal-section"><div class="modal-section-title">Análise da IA</div><p style="font-size:13px;color:var(--text2);line-height:1.7">${p.analise}</p></div>` : ''}
+    ${p.keywords?.length ? `<div class="modal-section"><div class="modal-section-title">Keywords</div><div class="keywords-list">${p.keywords.map(k=>`<span class="kw-tag">${k}</span>`).join('')}</div></div>` : ''}`;
   document.getElementById('produto-modal').classList.remove('hidden');
 };
-window.fecharModal = function(id) { document.getElementById(id)?.classList.add('hidden'); };
+window.fecharModal = function (id) { document.getElementById(id)?.classList.add('hidden'); };
 
 // ── EXCLUIR ───────────────────────────────────────────────────
-window.excluirProduto = async function(id, nome) {
+window.excluirProduto = async function (id, nome) {
   if (!confirm(`Excluir "${nome}"?`)) return;
   try { await psDB.collection('produtos').doc(id).delete(); showToast('Produto excluído ✓'); }
-  catch (e) { showToast('Erro: '+e.message,'error'); }
+  catch (e) { showToast('Erro: ' + e.message, 'error'); }
 };
-window.limparTodosDados = async function() {
+window.limparTodosDados = async function () {
   if (!confirm('⚠️ Apagar TODOS os seus produtos?')) return;
   if (!confirm('Confirma? Ação irreversível!')) return;
   try {
-    const snap  = await psDB.collection('produtos').where('usuario','==',currentUser.email).get();
+    const snap  = await psDB.collection('produtos').where('usuario', '==', currentUser.email).get();
     const batch = psDB.batch();
-    snap.docs.forEach(d=>batch.delete(d.ref));
+    snap.docs.forEach(d => batch.delete(d.ref));
     await batch.commit();
-    showToast('Todos os produtos apagados','error');
-  } catch(e) { showToast('Erro: '+e.message,'error'); }
+    showToast('Todos os produtos apagados', 'error');
+  } catch (e) { showToast('Erro: ' + e.message, 'error'); }
 };
 
 // ── CONFIGS ───────────────────────────────────────────────────
-window.salvarConfig = function() {
+window.salvarConfig = function () {
   const v = document.getElementById('cfg-min-vendas').value;
   const s = document.getElementById('cfg-min-score').value;
   if (v) localStorage.setItem('ps_min_vendas', v);
   if (s) localStorage.setItem('ps_min_score', s);
   showToast('Configurações salvas ✓');
 };
-window.salvarCustos = function() {
-  [['cfg-filamento','ps_custo_fil'],['cfg-energia','ps_custo_energia'],['cfg-mao-obra','ps_custo_mao'],['cfg-margem-min','ps_margem_min']]
-    .forEach(([id,key])=>{ const v=document.getElementById(id)?.value; if(v) localStorage.setItem(key,v); });
+window.salvarCustos = function () {
+  [['cfg-filamento','ps_custo_fil'],['cfg-energia','ps_custo_energia'],
+   ['cfg-mao-obra','ps_custo_mao'],['cfg-margem-min','ps_margem_min']]
+    .forEach(([id, key]) => {
+      const v = document.getElementById(id)?.value;
+      if (v) localStorage.setItem(key, v);
+    });
   showToast('Custos salvos ✓');
 };
 function carregarConfigs() {
-  [['cfg-min-vendas','ps_min_vendas'],['cfg-min-score','ps_min_score'],['cfg-filamento','ps_custo_fil'],['cfg-energia','ps_custo_energia'],['cfg-mao-obra','ps_custo_mao'],['cfg-margem-min','ps_margem_min']]
-    .forEach(([id,key])=>{ const el=document.getElementById(id); const v=localStorage.getItem(key); if(el&&v) el.value=v; });
+  [['cfg-min-vendas','ps_min_vendas'],['cfg-min-score','ps_min_score'],
+   ['cfg-filamento','ps_custo_fil'],['cfg-energia','ps_custo_energia'],
+   ['cfg-mao-obra','ps_custo_mao'],['cfg-margem-min','ps_margem_min']]
+    .forEach(([id, key]) => {
+      const el = document.getElementById(id);
+      const v  = localStorage.getItem(key);
+      if (el && v) el.value = v;
+    });
 }
 
 // ── UTILS ─────────────────────────────────────────────────────
-function formatDate(iso) { if(!iso) return '—'; return new Date(iso).toLocaleDateString('pt-BR'); }
-function verdictClass(v) { return v==='PRODUZIR'?'verd-green':v==='AVALIAR'?'verd-yellow':v==='EVITAR'?'verd-red':''; }
-window.showToast = function(msg, type='success') {
+function formatDate(iso) {
+  if (!iso) return '—';
+  return new Date(iso).toLocaleDateString('pt-BR');
+}
+function verdictClass(v) {
+  return v==='PRODUZIR' ? 'verd-green' : v==='AVALIAR' ? 'verd-yellow' : v==='EVITAR' ? 'verd-red' : '';
+}
+window.showToast = function (msg, type = 'success') {
   const el = document.getElementById('toast');
   el.textContent = msg;
   el.className = 'toast show ' + type;
   clearTimeout(el._t);
-  el._t = setTimeout(()=>{ el.className='toast'; }, 3500);
+  el._t = setTimeout(() => { el.className = 'toast'; }, 3500);
 };
-
-window.switchTab=window.switchTab; window.buscarNicho=window.buscarNicho;
-window.abrirAnalise=window.abrirAnalise; window.salvarAnalise=window.salvarAnalise;
-window.fecharModal=window.fecharModal; window.abrirModal=window.abrirModal;

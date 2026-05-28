@@ -167,8 +167,9 @@ async function callGemini(prompt, maxTokens = 1500) {
   updateStatusLabel('Conectando à IA…', 'checking');
   const models = getModelsToTry();
 
-  let lastErr  = null;
-  let allQuota = true; // assume todos com quota até provar o contrário
+  let lastErr     = null;
+  let hadQuota    = false; // houve pelo menos um 429
+  let hadSuccess  = false; // segurança
 
   for (const model of models) {
     try {
@@ -192,39 +193,28 @@ async function callGemini(prompt, maxTokens = 1500) {
       }
 
       if (e.status === 429) {
-        // Quota esgotada — tenta próximo sem alterar flag allQuota
-        continue;
+        hadQuota = true; // registra que houve cota esgotada
+        continue;        // tenta próximo modelo
       }
 
       if (e.status === 404) {
-        // Modelo não existe nesta chave — silencia e tenta próximo
-        allQuota = false;
-        continue;
+        continue; // modelo não existe nesta chave — silencia completamente
       }
 
       // Outros erros (500, rede, etc.) — tenta próximo
-      allQuota = false;
     }
   }
 
-  // Nenhum funcionou
+  // Nenhum modelo funcionou
   updateStatusLabel('Erro na API', 'offline');
 
-  // Determina mensagem final baseada no último erro
-  if (allQuota && lastErr?.status === 429) {
-    throw new Error(
-      '⏳ Cota gratuita esgotada. Aguarde 1-2 minutos e tente novamente.'
-    );
+  // Se houve pelo menos um 429 (e nenhum sucesso), é problema de cota
+  if (hadQuota) {
+    throw new Error('⏳ Cota esgotada. Aguarde 1-2 minutos e tente novamente.');
   }
 
-  // Se o último erro foi 404 ou a mensagem é técnica da API, mostra mensagem amigável
-  const lastMsg = lastErr?.message || '';
-  const isTechnical = lastErr?.status === 404 || lastMsg.includes('not found for API') || lastMsg.includes('not supported for generateContent');
-  throw new Error(
-    isTechnical
-      ? 'Nenhum modelo disponível respondeu. Vá em Configurações → Testar Chave.'
-      : (lastMsg.split('\n')[0] || 'Erro desconhecido')
-  );
+  // Erro técnico — mostra mensagem amigável sem expor detalhes da API
+  throw new Error('Nenhum modelo disponível respondeu. Vá em Configurações → Testar Chave.');
 }
 
 function updateStatusLabel(text, state) {

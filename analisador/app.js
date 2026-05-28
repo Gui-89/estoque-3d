@@ -1,7 +1,7 @@
 /* ═══════════════════════════════════════════════════════════
-   PRINT SCOUT — app.js  v7
-   Fix definitivo: working model sempre primeiro, cache robusto,
-   fallback correto, sem loop infinito, sem 429 silencioso
+   PRINT SCOUT — app.js  v8
+   Fix: remove modelos 1.5 (404 na v1beta), corrige lógica 400,
+   cache salva só modelos válidos testados, sem toast em 404
    ═══════════════════════════════════════════════════════════ */
 
 let currentUser           = null;
@@ -78,9 +78,9 @@ function extractJSON(raw) {
 }
 
 /*
- * MODELOS EM ORDEM DE PREFERÊNCIA — hardcoded como base segura.
- * gemini-2.5-flash primeiro pois é o mais capaz e gratuito.
- * Os modelos 2.0 ficam como fallback.
+ * Modelos confirmados na API v1beta (chaves gratuitas 2024+).
+ * gemini-1.5-* retornam 404 em chaves recentes — removidos da lista.
+ * Todos os erros 404 são silenciados (modelo não existe = pula para o próximo).
  */
 const PREFERRED_MODELS = [
   'gemini-2.5-flash',
@@ -88,9 +88,6 @@ const PREFERRED_MODELS = [
   'gemini-2.5-pro',
   'gemini-2.0-flash',
   'gemini-2.0-flash-lite',
-  'gemini-1.5-flash',
-  'gemini-1.5-flash-8b',
-  'gemini-1.5-pro',
 ];
 
 /*
@@ -195,12 +192,12 @@ async function callGemini(prompt, maxTokens = 1500) {
       }
 
       if (e.status === 429) {
-        // Quota esgotada — marca e tenta próximo
+        // Quota esgotada — tenta próximo sem alterar flag allQuota
         continue;
       }
 
-      if (e.status === 404 || e.status === 400) {
-        // Modelo não existe — tenta próximo
+      if (e.status === 404) {
+        // Modelo não existe nesta chave — silencia e tenta próximo
         allQuota = false;
         continue;
       }
@@ -213,17 +210,20 @@ async function callGemini(prompt, maxTokens = 1500) {
   // Nenhum funcionou
   updateStatusLabel('Erro na API', 'offline');
 
+  // Determina mensagem final baseada no último erro
   if (allQuota && lastErr?.status === 429) {
     throw new Error(
-      '⏳ Cota gratuita esgotada em todos os modelos.\n\n' +
-      'Aguarde 1-2 minutos e tente novamente.\n' +
-      'Limite gratuito: 15 req/min por modelo (gemini-2.5-flash).'
+      '⏳ Cota gratuita esgotada. Aguarde 1-2 minutos e tente novamente.'
     );
   }
 
+  // Se o último erro foi 404 ou a mensagem é técnica da API, mostra mensagem amigável
+  const lastMsg = lastErr?.message || '';
+  const isTechnical = lastErr?.status === 404 || lastMsg.includes('not found for API') || lastMsg.includes('not supported for generateContent');
   throw new Error(
-    (lastErr?.message || 'Erro desconhecido') +
-    '\n\nAcesse Configurações → Testar Chave para diagnóstico.'
+    isTechnical
+      ? 'Nenhum modelo disponível respondeu. Vá em Configurações → Testar Chave.'
+      : (lastMsg.split('\n')[0] || 'Erro desconhecido')
   );
 }
 
@@ -327,8 +327,12 @@ window.testarChaveGemini = async function () {
 
   if (firstOk) {
     localStorage.setItem('ps_working_model', firstOk);
-    // Salva lista dos PREFERRED como cache
-    localStorage.setItem('ps_models_cache',    JSON.stringify(PREFERRED_MODELS));
+    // Salva no cache APENAS os modelos que existem (ok ou 429), excluindo 404
+    const validModels = modelsToTest.filter((_, i) => {
+      const r = results[i] || '';
+      return !r.includes('não disponível') && !r.includes('falha de rede');
+    });
+    localStorage.setItem('ps_models_cache',    JSON.stringify(validModels.length ? validModels : PREFERRED_MODELS));
     localStorage.setItem('ps_models_cache_at', String(Date.now()));
     st.innerHTML = html + `<div style="margin-top:10px;padding:8px;background:var(--green-bg);border-radius:6px;color:var(--green);font-weight:600">→ Pronto! Modelo padrão: ${firstOk}</div>`;
     st.className = 'cfg-status ok';

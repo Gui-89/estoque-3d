@@ -1,6 +1,7 @@
 /* ═══════════════════════════════════════════════════════════
-   PRINT SCOUT — app.js  v6
-   Fix: remove responseMimeType, JSON robusto, sem loop infinito
+   PRINT SCOUT — app.js  v7
+   Fix definitivo: working model sempre primeiro, cache robusto,
+   fallback correto, sem loop infinito, sem 429 silencioso
    ═══════════════════════════════════════════════════════════ */
 
 let currentUser           = null;
@@ -52,7 +53,6 @@ window.logoutUser = function () { psAuth.signOut(); };
 
 // ── GEMINI API ────────────────────────────────────────────────
 function getApiKey() { return localStorage.getItem('ps_gemini_key') || ''; }
-function sleep(ms)   { return new Promise(r => setTimeout(r, ms)); }
 
 /* Extrai o primeiro bloco JSON válido de uma string qualquer */
 function extractJSON(raw) {
@@ -77,50 +77,14 @@ function extractJSON(raw) {
   catch (e) { throw new Error('JSON inválido: ' + e.message); }
 }
 
-/* Busca dinâmica dos modelos disponíveis na chave (cache 10 min) */
-async function fetchAvailableModels(apiKey) {
-  const cached   = localStorage.getItem('ps_models_cache');
-  const cachedAt = parseInt(localStorage.getItem('ps_models_cache_at') || '0');
-  if (cached && Date.now() - cachedAt < 10 * 60 * 1000) return JSON.parse(cached);
-
-  try {
-    const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}&pageSize=100`
-    );
-    if (!res.ok) return null;
-    const data = await res.json();
-
-    const models = (data.models || [])
-      .filter(m =>
-        Array.isArray(m.supportedGenerationMethods) &&
-        m.supportedGenerationMethods.includes('generateContent') &&
-        (m.name.includes('flash') || m.name.includes('pro'))
-      )
-      .map(m => m.name.replace('models/', ''))
-      .sort((a, b) => {
-        // flash > pro, mais novo > mais antigo, -lite/-8b por último
-        const s = x =>
-          x.includes('2.5') ? 40 :
-          x.includes('2.0') ? 30 :
-          x.includes('1.5') ? 20 : 10;
-        const penalty = x => (x.includes('lite') || x.includes('8b')) ? -5 : 0;
-        const type    = x => x.includes('flash') ? 3 : x.includes('pro') ? 2 : 1;
-        return (s(b) + type(b) + penalty(b)) - (s(a) + type(a) + penalty(a));
-      });
-
-    if (models.length) {
-      localStorage.setItem('ps_models_cache',    JSON.stringify(models));
-      localStorage.setItem('ps_models_cache_at', String(Date.now()));
-    }
-    return models.length ? models : null;
-  } catch (e) {
-    console.warn('[PrintScout] Erro ao listar modelos:', e.message);
-    return null;
-  }
-}
-
-const FALLBACK_MODELS = [
+/*
+ * MODELOS EM ORDEM DE PREFERÊNCIA — hardcoded como base segura.
+ * gemini-2.5-flash primeiro pois é o mais capaz e gratuito.
+ * Os modelos 2.0 ficam como fallback.
+ */
+const PREFERRED_MODELS = [
   'gemini-2.5-flash',
+  'gemini-2.5-flash-preview-05-20',
   'gemini-2.5-pro',
   'gemini-2.0-flash',
   'gemini-2.0-flash-lite',
@@ -129,12 +93,39 @@ const FALLBACK_MODELS = [
   'gemini-1.5-pro',
 ];
 
-async function getModelsToTry(apiKey) {
-  const dynamic = await fetchAvailableModels(apiKey);
-  return dynamic && dynamic.length ? dynamic : FALLBACK_MODELS;
+/*
+ * Retorna a lista de modelos a tentar.
+ * SEMPRE começa com o working_model salvo (se existir),
+ * depois os preferidos, depois os do cache dinâmico.
+ * Isso garante que gemini-2.5-flash (que funciona) seja tentado PRIMEIRO.
+ */
+function getModelsToTry() {
+  const saved = localStorage.getItem('ps_working_model');
+
+  // Pega modelos do cache dinâmico (se existir e válido)
+  let cached = [];
+  try {
+    const raw = localStorage.getItem('ps_models_cache');
+    const at  = parseInt(localStorage.getItem('ps_models_cache_at') || '0');
+    // Cache válido por 30 minutos
+    if (raw && Date.now() - at < 30 * 60 * 1000) {
+      cached = JSON.parse(raw);
+    }
+  } catch (_) {}
+
+  // Mescla: saved primeiro, depois PREFERRED, depois cached (sem duplicatas)
+  const all = [];
+  const seen = new Set();
+  const add = (m) => { if (m && !seen.has(m)) { seen.add(m); all.push(m); } };
+
+  if (saved) add(saved);
+  PREFERRED_MODELS.forEach(add);
+  cached.forEach(add);
+
+  return all;
 }
 
-/* Tenta UM modelo — sem loop de retry para 429 (passa logo pro próximo) */
+/* Tenta UM modelo — retorna resultado ou lança erro com .status */
 async function tryModel(model, prompt, maxTokens) {
   const apiKey = getApiKey();
 
@@ -146,9 +137,8 @@ async function tryModel(model, prompt, maxTokens) {
       body: JSON.stringify({
         contents: [{ parts: [{ text: prompt }] }],
         generationConfig: {
-          temperature:      0.5,    // menos criativo = JSON mais limpo
-          maxOutputTokens:  maxTokens,
-          // ⚠️ SEM responseMimeType — incompatível com gemini-2.5-flash
+          temperature:     0.4,
+          maxOutputTokens: maxTokens,
         }
       })
     }
@@ -157,65 +147,83 @@ async function tryModel(model, prompt, maxTokens) {
   if (res.ok) {
     const data = await res.json();
     const raw  = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-    return extractJSON(raw);   // extração robusta
+    if (!raw) throw new Error('Resposta vazia do modelo.');
+    return extractJSON(raw);
   }
 
-  const errBody  = await res.json().catch(() => ({}));
-  const httpCode = res.status;
-  const msg      = errBody.error?.message || `HTTP ${httpCode}`;
-  throw Object.assign(new Error(msg), { status: httpCode });
+  let errMsg = `HTTP ${res.status}`;
+  try {
+    const errBody = await res.json();
+    errMsg = errBody.error?.message || errMsg;
+  } catch (_) {}
+
+  const err = new Error(errMsg);
+  err.status = res.status;
+  throw err;
 }
 
-/* Chamada principal: tenta cada modelo uma vez, sem esperas longas */
+/* Chamada principal: tenta cada modelo, pulando 429 e 404 */
 async function callGemini(prompt, maxTokens = 1500) {
   const apiKey = getApiKey();
   if (!apiKey) throw new Error('Configure sua chave Gemini gratuita em Configurações!');
 
-  updateStatusLabel('Detectando modelos…', 'checking');
-  const models = await getModelsToTry(apiKey);
+  updateStatusLabel('Conectando à IA…', 'checking');
+  const models = getModelsToTry();
 
-  // Modelo que funcionou antes vai na frente
-  const saved = localStorage.getItem('ps_working_model');
-  const ordered = saved && models.includes(saved)
-    ? [saved, ...models.filter(m => m !== saved)]
-    : models;
+  let lastErr  = null;
+  let allQuota = true; // assume todos com quota até provar o contrário
 
-  let lastErr = null;
-
-  for (const model of ordered) {
+  for (const model of models) {
     try {
       updateStatusLabel(`Consultando ${model}…`, 'checking');
       const result = await tryModel(model, prompt, maxTokens);
+
+      // Sucesso — salva como working model e atualiza status
       localStorage.setItem('ps_working_model', model);
       updateStatusLabel(`Gemini ✓ (${model})`, 'online');
+      console.log(`[PrintScout] ✓ Sucesso com ${model}`);
       return result;
+
     } catch (e) {
       lastErr = e;
+      console.warn(`[PrintScout] ${model}: HTTP ${e.status || '?'} — ${e.message}`);
+
       if (e.status === 400) {
+        // Chave inválida — para imediatamente
         updateStatusLabel('Chave inválida', 'offline');
         throw new Error('Chave API inválida. Verifique em Configurações (deve começar com "AIza").');
       }
-      // 404 → modelo não existe, 429 → cota, outro → erro temporário
-      // Em todos os casos: tenta o próximo imediatamente
-      console.warn(`[PrintScout] ${model}: ${e.status || ''} ${e.message}`);
+
+      if (e.status === 429) {
+        // Quota esgotada — marca e tenta próximo
+        continue;
+      }
+
+      if (e.status === 404 || e.status === 400) {
+        // Modelo não existe — tenta próximo
+        allQuota = false;
+        continue;
+      }
+
+      // Outros erros (500, rede, etc.) — tenta próximo
+      allQuota = false;
     }
   }
 
   // Nenhum funcionou
   updateStatusLabel('Erro na API', 'offline');
-  localStorage.removeItem('ps_models_cache');
-  localStorage.removeItem('ps_models_cache_at');
 
-  if (lastErr?.status === 429) {
+  if (allQuota && lastErr?.status === 429) {
     throw new Error(
-      'Cota esgotada em todos os modelos.\n' +
-      'Aguarde alguns minutos e tente novamente.\n' +
-      '(Limite gratuito: 15 req/min por modelo)'
+      '⏳ Cota gratuita esgotada em todos os modelos.\n\n' +
+      'Aguarde 1-2 minutos e tente novamente.\n' +
+      'Limite gratuito: 15 req/min por modelo (gemini-2.5-flash).'
     );
   }
+
   throw new Error(
-    (lastErr?.message || 'Erro desconhecido') + '\n' +
-    'Acesse Configurações → Testar Chave para diagnóstico.'
+    (lastErr?.message || 'Erro desconhecido') +
+    '\n\nAcesse Configurações → Testar Chave para diagnóstico.'
   );
 }
 
@@ -237,7 +245,7 @@ function verificarApiKey() {
     lbl.textContent = 'Gemini não configurado';
   } else {
     dot.className   = 'status-dot online';
-    const m = localStorage.getItem('ps_working_model') || 'gemini (auto)';
+    const m = localStorage.getItem('ps_working_model') || 'gemini-2.5-flash';
     lbl.textContent = `Gemini ✓ (${m})`;
   }
 }
@@ -249,6 +257,7 @@ window.salvarApiKey = function () {
     return;
   }
   localStorage.setItem('ps_gemini_key', key);
+  // Limpa cache para forçar redescoberta
   localStorage.removeItem('ps_working_model');
   localStorage.removeItem('ps_models_cache');
   localStorage.removeItem('ps_models_cache_at');
@@ -266,87 +275,65 @@ window.testarChaveGemini = async function () {
   if (!key) { showToast('Nenhuma chave configurada', 'error'); return; }
 
   const btn = document.getElementById('btn-testar-chave');
-  if (btn) { btn.disabled = true; btn.textContent = '⏳ Detectando…'; }
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Testando…'; }
 
   const st = document.getElementById('cfg-key-status');
-  st.innerHTML = '⏳ Buscando modelos disponíveis na sua chave…';
+  st.innerHTML = '⏳ Testando modelos disponíveis…';
   st.className = 'cfg-status ok';
   st.classList.remove('hidden');
 
+  // Limpa cache para teste limpo
   localStorage.removeItem('ps_models_cache');
   localStorage.removeItem('ps_models_cache_at');
+  localStorage.removeItem('ps_working_model');
 
-  try {
-    const listRes = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models?key=${key}&pageSize=100`
-    );
-    if (!listRes.ok) {
-      const err = await listRes.json().catch(() => ({}));
-      st.innerHTML = listRes.status === 400
-        ? '🔑 Chave inválida (erro 400). Verifique se copiou corretamente.'
-        : `⚠️ Erro ao listar modelos: HTTP ${listRes.status} — ${err.error?.message || ''}`;
-      st.className = 'cfg-status err';
-      if (btn) { btn.disabled = false; btn.textContent = '🔍 Testar Chave'; }
-      return;
-    }
+  const results = [];
+  let firstOk   = null;
+  const modelsToTest = [...PREFERRED_MODELS];
 
-    const listData  = await listRes.json();
-    const allModels = (listData.models || [])
-      .filter(m => Array.isArray(m.supportedGenerationMethods) &&
-                   m.supportedGenerationMethods.includes('generateContent') &&
-                   (m.name.includes('flash') || m.name.includes('pro')))
-      .map(m => m.name.replace('models/', ''))
-      .slice(0, 8);
-
-    if (!allModels.length) {
-      st.innerHTML = '❌ Nenhum modelo compatível encontrado nesta chave.';
-      st.className = 'cfg-status err';
-      if (btn) { btn.disabled = false; btn.textContent = '🔍 Testar Chave'; }
-      return;
-    }
-
-    const lines   = [`📋 Modelos encontrados: <strong>${allModels.length}</strong><br>`];
-    let   firstOk = null;
-
-    for (const model of allModels) {
-      try {
-        const r = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`,
-          {
-            method:  'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              contents: [{ parts: [{ text: 'Responda APENAS o JSON: {"ok":true}' }] }],
-              generationConfig: { maxOutputTokens: 30, temperature: 0 }
-            })
-          }
-        );
-        if (r.ok) {
-          lines.push(`✅ ${model} — funcionando`);
-          if (!firstOk) firstOk = model;
-        } else {
-          const s = r.status;
-          lines.push(s === 429
-            ? `⏳ ${model} — cota ativa (disponível após espera)`
-            : `⚠️ ${model} — ${s}`);
-          if (s === 429 && !firstOk) firstOk = model;
+  for (const model of modelsToTest) {
+    try {
+      const r = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`,
+        {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: 'Responda APENAS: {"ok":true}' }] }],
+            generationConfig: { maxOutputTokens: 20, temperature: 0 }
+          })
         }
-      } catch { lines.push(`❌ ${model} — falha de rede`); }
+      );
+      if (r.ok) {
+        results.push(`✅ ${model} — <strong style="color:var(--green)">funcionando</strong>`);
+        if (!firstOk) firstOk = model;
+      } else {
+        const s = r.status;
+        if (s === 429) {
+          results.push(`⏳ ${model} — cota temporária (tente em 1 min)`);
+          if (!firstOk) firstOk = model; // Marcar como disponível mesmo com 429
+        } else if (s === 404) {
+          results.push(`⬜ ${model} — não disponível nesta chave`);
+        } else {
+          results.push(`⚠️ ${model} — erro ${s}`);
+        }
+      }
+    } catch {
+      results.push(`❌ ${model} — falha de rede`);
     }
+  }
 
-    if (firstOk) {
-      localStorage.setItem('ps_working_model', firstOk);
-      localStorage.setItem('ps_models_cache',    JSON.stringify(allModels));
-      localStorage.setItem('ps_models_cache_at', String(Date.now()));
-      lines.push(`<br><strong style="color:var(--green)">→ Modelo padrão: ${firstOk} ✓ Pronto para usar!</strong>`);
-    } else {
-      lines.push('<br><strong style="color:var(--red)">→ Nenhum modelo respondeu agora. Aguarde alguns minutos.</strong>');
-    }
+  const html = results.map(r => `<div style="padding:3px 0;font-size:12px">${r}</div>`).join('');
 
-    st.innerHTML = lines.join('<br>');
-    st.className = firstOk ? 'cfg-status ok' : 'cfg-status err';
-  } catch (e) {
-    st.innerHTML = `❌ Erro de rede: ${e.message}`;
+  if (firstOk) {
+    localStorage.setItem('ps_working_model', firstOk);
+    // Salva lista dos PREFERRED como cache
+    localStorage.setItem('ps_models_cache',    JSON.stringify(PREFERRED_MODELS));
+    localStorage.setItem('ps_models_cache_at', String(Date.now()));
+    st.innerHTML = html + `<div style="margin-top:10px;padding:8px;background:var(--green-bg);border-radius:6px;color:var(--green);font-weight:600">→ Pronto! Modelo padrão: ${firstOk}</div>`;
+    st.className = 'cfg-status ok';
+  } else {
+    st.innerHTML = html + `<div style="margin-top:10px;padding:8px;background:var(--red-bg);border-radius:6px;color:var(--red);font-weight:600">→ Nenhum modelo respondeu. Aguarde 1-2 minutos e tente novamente.</div>`;
     st.className = 'cfg-status err';
   }
 
@@ -420,7 +407,6 @@ window.buscarNicho = async function () {
   const hoje = new Date().toLocaleDateString('pt-BR',
     { day: '2-digit', month: 'long', year: 'numeric' });
 
-  // ── Prompt simplificado = resposta mais rápida e JSON mais limpo ──
   const prompt = `Você é especialista em e-commerce brasileiro e impressão 3D FDM.
 
 Nicho: ${nichoSelecionado}
@@ -432,16 +418,17 @@ Custos: filamento R$${custoFil}/kg, energia R$${custoEnerg}/h, mão de obra R$${
 Liste os 8 produtos mais vendidos deste nicho que possam ser fabricados com impressora 3D FDM.
 
 Responda SOMENTE com JSON puro, sem texto antes ou depois, sem markdown, sem explicações:
-{"nicho":"${nichoSelecionado}","plataforma":"${plataformaSelecionada}","data_referencia":"${hoje}","produtos":[{"nome":"nome do produto","descricao":"descrição curta","preco_min":15.00,"preco_max":45.00,"vendas_dia_estimadas":500,"concorrentes_estimados":60,"avaliacao_media":4.5,"printabilidade":8,"oportunidade":7,"saturacao":4,"veredicto":"PRODUZIR","material_sugerido":"PLA","motivo":"motivo em uma frase","diferencial_possivel":"como se diferenciar"}]}
+{"nicho":"${nichoSelecionado}","plataforma":"${plataformaSelecionada}","data_referencia":"${hoje}","produtos":[{"nome":"nome do produto","descricao":"descricao curta","preco_min":15.00,"preco_max":45.00,"vendas_dia_estimadas":500,"concorrentes_estimados":60,"avaliacao_media":4.5,"printabilidade":8,"oportunidade":7,"saturacao":4,"veredicto":"PRODUZIR","material_sugerido":"PLA","motivo":"motivo em uma frase","diferencial_possivel":"como se diferenciar"}]}
 
 Regras:
 - printabilidade/oportunidade/saturacao: 0 a 10
-- veredicto: PRODUZIR (oportunidade>=7 e print>=6), AVALIAR (intermediário), EVITAR (saturado)
+- veredicto: PRODUZIR (oportunidade>=7 e print>=6), AVALIAR (intermediario), EVITAR (saturado)
 - Retorne exatamente 8 produtos
-- JSON válido sem caracteres especiais problemáticos`;
+- JSON valido sem caracteres especiais problematicos
+- Nao use aspas simples dentro de strings JSON`;
 
   try {
-    const resultado = await callGemini(prompt, 1800);
+    const resultado = await callGemini(prompt, 2000);
 
     if (!resultado.produtos || !Array.isArray(resultado.produtos)) {
       throw new Error('A IA não retornou a lista de produtos. Tente novamente.');
@@ -461,8 +448,11 @@ Regras:
     renderDiscovery(resultado, produtos);
     showToast(`${produtos.length} produtos encontrados!`, 'success');
   } catch (e) {
-    showToast('Erro: ' + e.message, 'error');
-    if (e.message.includes('Configurações')) switchTab('config');
+    showToast('Erro: ' + e.message.split('\n')[0], 'error');
+    // Mostra erro completo no modal se for longo
+    if (e.message.includes('Cota') || e.message.includes('Configurações') || e.message.includes('Config')) {
+      if (e.message.includes('Configurações') || e.message.includes('Config')) switchTab('config');
+    }
   } finally {
     setBuscarLoading(false);
     verificarApiKey();
@@ -538,16 +528,16 @@ window.abrirAnalise = async function (index) {
   const custoMao   = localStorage.getItem('ps_custo_mao')     || '25';
   const margemMin  = localStorage.getItem('ps_margem_min')    || '40';
 
-  const prompt = `Especialista em impressão 3D FDM e e-commerce brasileiro.
+  const prompt = `Especialista em impressao 3D FDM e e-commerce brasileiro.
 
 Produto: ${produto.nome}
 Nicho: ${meta.nicho || ''} | Plataforma: ${meta.plataforma || 'Shopee'}
-Preço mercado: R$${produto.preco_min}–R$${produto.preco_max}
+Preco mercado: R$${produto.preco_min}–R$${produto.preco_max}
 Vendas/dia: ${produto.vendas_dia_estimadas} | Concorrentes: ${produto.concorrentes_estimados}
-Custos: filamento R$${custoFil}/kg, energia R$${custoEnerg}/h, mão obra R$${custoMao}/h, margem mínima ${margemMin}%
+Custos: filamento R$${custoFil}/kg, energia R$${custoEnerg}/h, mao obra R$${custoMao}/h, margem minima ${margemMin}%
 
 Responda SOMENTE com JSON puro, sem texto antes ou depois:
-{"printabilidade":8,"oportunidade":7,"saturacao":5,"veredicto":"PRODUZIR","material_principal":"PLA","material_alternativo":"PETG","dificuldade":"Fácil","nivel_concorrencia":"Média","tempo_impressao":"2h 30m","custo_material_min":3.50,"custo_material_max":6.00,"custo_total_min":5.00,"custo_total_max":9.00,"preco_sugerido_min":25.00,"preco_sugerido_max":45.00,"margem_estimada_min":60,"margem_estimada_max":80,"config_impressao":{"camada":"0.2mm","infill":"20%","suporte":"Não","temperatura_bico":"210C","temperatura_mesa":"60C","velocidade":"60mm/s"},"pontos_favoraveis":["ponto1","ponto2","ponto3"],"riscos":["risco1","risco2"],"analise_resumo":"análise em 3 frases","keywords_shopee":["kw1","kw2","kw3","kw4","kw5"],"diferenciais":["diferencial1","diferencial2"],"ideias_variacao":["variacao1","variacao2"],"alertas":[]}`;
+{"printabilidade":8,"oportunidade":7,"saturacao":5,"veredicto":"PRODUZIR","material_principal":"PLA","material_alternativo":"PETG","dificuldade":"Facil","nivel_concorrencia":"Media","tempo_impressao":"2h 30m","custo_material_min":3.50,"custo_material_max":6.00,"custo_total_min":5.00,"custo_total_max":9.00,"preco_sugerido_min":25.00,"preco_sugerido_max":45.00,"margem_estimada_min":60,"margem_estimada_max":80,"config_impressao":{"camada":"0.2mm","infill":"20%","suporte":"Nao","temperatura_bico":"210C","temperatura_mesa":"60C","velocidade":"60mm/s"},"pontos_favoraveis":["ponto1","ponto2","ponto3"],"riscos":["risco1","risco2"],"analise_resumo":"analise em 3 frases","keywords_shopee":["kw1","kw2","kw3","kw4","kw5"],"diferenciais":["diferencial1","diferencial2"],"ideias_variacao":["variacao1","variacao2"],"alertas":[]}`;
 
   try {
     const resultado = await callGemini(prompt, 1500);
@@ -555,7 +545,7 @@ Responda SOMENTE com JSON puro, sem texto antes ou depois:
     renderAnalise(resultado);
   } catch (e) {
     fecharModal('analise-modal');
-    showToast('Erro na análise: ' + e.message, 'error');
+    showToast('Erro na análise: ' + e.message.split('\n')[0], 'error');
   }
 };
 
@@ -926,6 +916,15 @@ function carregarConfigs() {
       if (el && v) el.value = v;
     });
 }
+
+// ── LIMPAR CACHE (botão útil nas configs) ─────────────────────
+window.limparCacheModelos = function () {
+  localStorage.removeItem('ps_models_cache');
+  localStorage.removeItem('ps_models_cache_at');
+  localStorage.removeItem('ps_working_model');
+  showToast('Cache de modelos limpo ✓', 'success');
+  verificarApiKey();
+};
 
 // ── UTILS ─────────────────────────────────────────────────────
 function formatDate(iso) {
